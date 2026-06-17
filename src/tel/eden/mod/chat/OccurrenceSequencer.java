@@ -21,29 +21,29 @@ import java.util.Map;
  * quick succession (a single physical event re-sent in the same tick) onto one seq.
  */
 public final class OccurrenceSequencer {
-    // The same line re-delivered within this gap is a re-emit, not a new deposit.
-    private static final long REEMIT_GUARD_MS = 200L;
+	// The same line re-delivered within this gap is a re-emit, not a new deposit.
+	private static final long REEMIT_GUARD_MS = 200L;
 
-    private final long windowMillis;
-    private final Map<String, ArrayDeque<Long>> seen = new HashMap<>();
+	private final long windowMillis;
+	private final Map<String, ArrayDeque<Long>> seen = new HashMap<>();
 
-    public OccurrenceSequencer(long windowMillis) {
-        this.windowMillis = windowMillis;
-    }
+	public OccurrenceSequencer(long windowMillis) {
+		this.windowMillis = windowMillis;
+	}
 
-    /** Record an occurrence of {@code signature} and return its index in the window. */
-    public synchronized int next(String signature) {
-        long now = System.currentTimeMillis();
-        ArrayDeque<Long> times = seen.computeIfAbsent(signature, k -> new ArrayDeque<>());
-        while (!times.isEmpty() && now - times.peekFirst() > windowMillis) {
-            times.pollFirst();
-        }
-        // A near-instant repeat is the same line emitted twice; reuse its index so the
-        // backend dedups it instead of treating it as a second deposit.
-        if (!times.isEmpty() && now - times.peekLast() < REEMIT_GUARD_MS) {
-            return times.size();
-        }
-        times.addLast(now);
-        return times.size();
-    }
+	/** Record an occurrence of {@code signature} and return its index in the window. */
+	public synchronized int next(String signature) {
+		long now = System.currentTimeMillis();
+		ArrayDeque<Long> times = seen.computeIfAbsent(signature, k -> new ArrayDeque<>());
+		while (!times.isEmpty() && now - times.peekFirst() > windowMillis) {
+			times.pollFirst();
+		}
+		// A near-instant repeat is the same line emitted twice; reuse its index so the
+		// backend dedups it instead of treating it as a second deposit.
+		if (!times.isEmpty() && now - times.peekLast() < REEMIT_GUARD_MS) {
+			return times.size();
+		}
+		times.addLast(now);
+		return times.size();
+	}
 }

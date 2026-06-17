@@ -8,4 +8,5 @@ package tel.eden.mod.chat;
  * @param nickname the visible display name (may equal {@code username})
  * @param message the chat body
  */
-public record CapturedMessage(String username, String nickname, String message) {}
+public record CapturedMessage(String username, String nickname, String message) {
+}

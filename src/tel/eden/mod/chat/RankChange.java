@@ -8,4 +8,5 @@ package tel.eden.mod.chat;
  * @param newRank the new guild rank (e.g. {@code "Strategist"})
  * @param setter  the member who changed the rank (display name)
  */
-public record RankChange(String target, String oldRank, String newRank, String setter) {}
+public record RankChange(String target, String oldRank, String newRank, String setter) {
+}

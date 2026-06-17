@@ -11,6 +11,7 @@ run/
 *.iws
 .vscode/
 bin/
+CLAUDE.md
 
 # OS
 .DS_Store

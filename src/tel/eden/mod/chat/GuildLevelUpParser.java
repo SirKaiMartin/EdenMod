@@ -15,28 +15,28 @@ import net.minecraft.network.chat.Component;
  * normalized line is relayed verbatim rather than reformatted.
  */
 public final class GuildLevelUpParser {
-    // Gate: the banner always carries this header, and the data line always states
-    // the new level. Both must be present so a stray "Guild Level Up" without the
-    // value line (or vice-versa) is not relayed.
-    private static final Pattern LEVEL = Pattern.compile(
-            "is now level \\d+", Pattern.CASE_INSENSITIVE);
+	// Gate: the banner always carries this header, and the data line always states
+	// the new level. Both must be present so a stray "Guild Level Up" without the
+	// value line (or vice-versa) is not relayed.
+	private static final Pattern LEVEL = Pattern.compile("is now level \\d+", Pattern.CASE_INSENSITIVE);
 
-    private GuildLevelUpParser() {}
+	private GuildLevelUpParser() {
+	}
 
-    /** Cheap keyword gate before normalization runs. */
-    public static boolean isCandidate(Component message) {
-        return message != null && message.getString().contains("Guild Level Up");
-    }
+	/** Cheap keyword gate before normalization runs. */
+	public static boolean isCandidate(Component message) {
+		return message != null && message.getString().contains("Guild Level Up");
+	}
 
-    /** Parse a system-chat component, returning the verbatim line if it is a level-up. */
-    public static Optional<String> parse(Component message) {
-        if (!isCandidate(message)) {
-            return Optional.empty();
-        }
-        String text = ChatText.normalize(message.getString());
-        if (!LEVEL.matcher(text).find()) {
-            return Optional.empty();
-        }
-        return Optional.of(text);
-    }
+	/** Parse a system-chat component, returning the verbatim line if it is a level-up. */
+	public static Optional<String> parse(Component message) {
+		if (!isCandidate(message)) {
+			return Optional.empty();
+		}
+		String text = ChatText.normalize(message.getString());
+		if (!LEVEL.matcher(text).find()) {
+			return Optional.empty();
+		}
+		return Optional.of(text);
+	}
 }

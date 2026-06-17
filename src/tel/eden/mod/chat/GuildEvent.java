@@ -9,4 +9,5 @@ package tel.eden.mod.chat;
  * performed it (empty when the message has no actor, e.g. a join); {@code subject}
  * is the affected player or guild.
  */
-public record GuildEvent(String kind, String actor, String subject) {}
+public record GuildEvent(String kind, String actor, String subject) {
+}

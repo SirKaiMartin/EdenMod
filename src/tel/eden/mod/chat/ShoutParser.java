@@ -16,35 +16,36 @@ import net.minecraft.network.chat.Component;
  * custom-font glyph stripped by {@link ChatText#normalize}; the name is hover-resolved.
  */
 public final class ShoutParser {
-    private static final Pattern SHOUT = Pattern.compile("^(.+?)\\s+shouts:\\s+(.+)$");
+	private static final Pattern SHOUT = Pattern.compile("^(.+?)\\s+shouts:\\s+(.+)$");
 
-    private ShoutParser() {}
+	private ShoutParser() {
+	}
 
-    /** Cheap keyword gate before the regex/cleanup runs. */
-    public static boolean isCandidate(Component message) {
-        return message != null && message.getString().contains("shouts:");
-    }
+	/** Cheap keyword gate before the regex/cleanup runs. */
+	public static boolean isCandidate(Component message) {
+		return message != null && message.getString().contains("shouts:");
+	}
 
-    /** Parse a shout into its bridge-chat line ("<name> shouts: <message>"), if it is one. */
-    public static Optional<String> parse(Component message) {
-        if (!isCandidate(message)) {
-            return Optional.empty();
-        }
-        Matcher matcher = SHOUT.matcher(ChatText.normalize(message.getString()));
-        if (!matcher.matches()) {
-            return Optional.empty();
-        }
-        return Optional.of(resolve(message, matcher.group(1)) + " shouts: " + matcher.group(2).trim());
-    }
+	/** Parse a shout into its bridge-chat line ("<name> shouts: <message>"), if it is one. */
+	public static Optional<String> parse(Component message) {
+		if (!isCandidate(message)) {
+			return Optional.empty();
+		}
+		Matcher matcher = SHOUT.matcher(ChatText.normalize(message.getString()));
+		if (!matcher.matches()) {
+			return Optional.empty();
+		}
+		return Optional.of(resolve(message, matcher.group(1)) + " shouts: " + matcher.group(2).trim());
+	}
 
-    /** Real account name from hover, else the displayed name minus any "/nick". */
-    private static String resolve(Component message, String displayed) {
-        String resolved = ChatText.resolveRealName(message, displayed);
-        if (resolved != null) {
-            return resolved;
-        }
-        String name = displayed.trim();
-        int slash = name.indexOf('/');
-        return slash > 0 ? name.substring(0, slash).trim() : name;
-    }
+	/** Real account name from hover, else the displayed name minus any "/nick". */
+	private static String resolve(Component message, String displayed) {
+		String resolved = ChatText.resolveRealName(message, displayed);
+		if (resolved != null) {
+			return resolved;
+		}
+		String name = displayed.trim();
+		int slash = name.indexOf('/');
+		return slash > 0 ? name.substring(0, slash).trim() : name;
+	}
 }

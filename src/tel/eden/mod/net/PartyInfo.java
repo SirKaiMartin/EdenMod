@@ -7,8 +7,8 @@ import java.util.List;
  * event or a {@code partyListReply}). {@code members} is host-first.
  */
 public record PartyInfo(int id, String raid, String host, List<String> members, int max, String note) {
-    /** Current occupancy (e.g. {@code 2} of {@code max}). */
-    public int size() {
-        return members.size();
-    }
+	/** Current occupancy (e.g. {@code 2} of {@code max}). */
+	public int size() {
+		return members.size();
+	}
 }

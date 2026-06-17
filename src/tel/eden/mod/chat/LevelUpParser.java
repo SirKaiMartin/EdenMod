@@ -18,47 +18,42 @@ import net.minecraft.network.chat.Component;
  * profession icon (a custom-font glyph) is stripped by {@link ChatText#normalize}.
  */
 public final class LevelUpParser {
-    private static final Pattern COMBAT = Pattern.compile(
-            "Congratulations to (.+?) for reaching combat level (\\d+)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PROFESSION = Pattern.compile(
-            "Congratulations to (.+?) for reaching level (\\d+) in .*?([A-Za-z]+)\\s*!",
-            Pattern.CASE_INSENSITIVE);
+	private static final Pattern COMBAT = Pattern.compile("Congratulations to (.+?) for reaching combat level (\\d+)", Pattern.CASE_INSENSITIVE);
+	private static final Pattern PROFESSION = Pattern.compile("Congratulations to (.+?) for reaching level (\\d+) in .*?([A-Za-z]+)\\s*!", Pattern.CASE_INSENSITIVE);
 
-    private LevelUpParser() {}
+	private LevelUpParser() {
+	}
 
-    /** Cheap keyword gate before the regexes run. */
-    public static boolean isCandidate(Component message) {
-        return message != null && message.getString().contains("for reaching");
-    }
+	/** Cheap keyword gate before the regexes run. */
+	public static boolean isCandidate(Component message) {
+		return message != null && message.getString().contains("for reaching");
+	}
 
-    /** Parse a system-chat component, returning a level-up if it is one. */
-    public static Optional<LevelUp> parse(Component message) {
-        if (!isCandidate(message)) {
-            return Optional.empty();
-        }
-        String text = ChatText.normalize(message.getString());
-        Matcher combat = COMBAT.matcher(text);
-        if (combat.find()) {
-            return Optional.of(new LevelUp(
-                    resolve(message, combat.group(1)), "combat level " + combat.group(2)));
-        }
-        Matcher profession = PROFESSION.matcher(text);
-        if (profession.find()) {
-            return Optional.of(new LevelUp(
-                    resolve(message, profession.group(1)),
-                    "level " + profession.group(2) + " in " + profession.group(3)));
-        }
-        return Optional.empty();
-    }
+	/** Parse a system-chat component, returning a level-up if it is one. */
+	public static Optional<LevelUp> parse(Component message) {
+		if (!isCandidate(message)) {
+			return Optional.empty();
+		}
+		String text = ChatText.normalize(message.getString());
+		Matcher combat = COMBAT.matcher(text);
+		if (combat.find()) {
+			return Optional.of(new LevelUp(resolve(message, combat.group(1)), "combat level " + combat.group(2)));
+		}
+		Matcher profession = PROFESSION.matcher(text);
+		if (profession.find()) {
+			return Optional.of(new LevelUp(resolve(message, profession.group(1)), "level " + profession.group(2) + " in " + profession.group(3)));
+		}
+		return Optional.empty();
+	}
 
-    /** Real account name from hover, else the displayed name minus any "/nick". */
-    private static String resolve(Component message, String displayed) {
-        String resolved = ChatText.resolveRealName(message, displayed);
-        if (resolved != null) {
-            return resolved;
-        }
-        String name = displayed.trim();
-        int slash = name.indexOf('/');
-        return slash > 0 ? name.substring(0, slash).trim() : name;
-    }
+	/** Real account name from hover, else the displayed name minus any "/nick". */
+	private static String resolve(Component message, String displayed) {
+		String resolved = ChatText.resolveRealName(message, displayed);
+		if (resolved != null) {
+			return resolved;
+		}
+		String name = displayed.trim();
+		int slash = name.indexOf('/');
+		return slash > 0 ? name.substring(0, slash).trim() : name;
+	}
 }

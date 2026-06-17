@@ -9,4 +9,5 @@ package tel.eden.mod.chat;
  *     {@code "a Guild Tome"}, {@code "1024 Emeralds"}); kept verbatim for display
  * @param receiver the real account name of who received it (hover-resolved)
  */
-public record GuildReward(String giver, String reward, String receiver) {}
+public record GuildReward(String giver, String reward, String receiver) {
+}

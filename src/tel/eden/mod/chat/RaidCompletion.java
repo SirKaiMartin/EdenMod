@@ -13,5 +13,5 @@ import java.util.List;
  * @param guildExp  the guild-experience reward as shown in chat (e.g. {@code "633"}
  *     from {@code "+633m Guild Experience"}); kept verbatim for display only
  */
-public record RaidCompletion(
-        List<String> party, String raidName, int aspects, int emeralds, String guildExp) {}
+public record RaidCompletion(List<String> party, String raidName, int aspects, int emeralds, String guildExp) {
+}

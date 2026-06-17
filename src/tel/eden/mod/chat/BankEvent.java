@@ -10,10 +10,5 @@ package tel.eden.mod.chat;
  * @param charges    optional bracketed suffix (e.g. consumable charges), or null
  * @param accessTier the bank tier — {@code "Everyone"} or {@code "High Ranked"}
  */
-public record BankEvent(
-        String action,
-        String player,
-        Integer quantity,
-        String item,
-        String charges,
-        String accessTier) {}
+public record BankEvent(String action, String player, Integer quantity, String item, String charges, String accessTier) {
+}

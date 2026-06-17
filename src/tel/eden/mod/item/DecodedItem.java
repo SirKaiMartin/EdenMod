@@ -13,33 +13,26 @@ import java.util.List;
  * @param identifications the rolled identifications, top to bottom
  * @param powderSlots    the number of powder slots on the item
  */
-public record DecodedItem(
-        String name,
-        String tier,
-        int tierColor,
-        String type,
-        float overallPercent,
-        List<Identification> identifications,
-        int powderSlots) {
+public record DecodedItem(String name, String tier, int tierColor, String type, float overallPercent, List<Identification> identifications, int powderSlots) {
 
-    /** Whether an overall roll quality is present (gear with variable stats). */
-    public boolean hasOverall() {
-        return overallPercent >= 0;
-    }
+	/** Whether an overall roll quality is present (gear with variable stats). */
+	public boolean hasOverall() {
+		return overallPercent >= 0;
+	}
 
-    /**
-     * One rolled identification line.
-     *
-     * @param name        stat display name (e.g. {@code "Walk Speed"})
-     * @param valueText   the formatted value with sign + unit (e.g. {@code "+38%"})
-     * @param rollPercent the roll quality 0-100, or a negative value if not applicable
-     * @param positive    whether the roll is beneficial (green) vs detrimental (red)
-     */
-    public record Identification(String name, String valueText, float rollPercent, boolean positive) {
+	/**
+	 * One rolled identification line.
+	 *
+	 * @param name        stat display name (e.g. {@code "Walk Speed"})
+	 * @param valueText   the formatted value with sign + unit (e.g. {@code "+38%"})
+	 * @param rollPercent the roll quality 0-100, or a negative value if not applicable
+	 * @param positive    whether the roll is beneficial (green) vs detrimental (red)
+	 */
+	public record Identification(String name, String valueText, float rollPercent, boolean positive) {
 
-        /** Whether a roll percentage applies (variable, non pre-identified stats). */
-        public boolean hasRoll() {
-            return rollPercent >= 0;
-        }
-    }
+		/** Whether a roll percentage applies (variable, non pre-identified stats). */
+		public boolean hasRoll() {
+			return rollPercent >= 0;
+		}
+	}
 }

@@ -7,4 +7,5 @@ package tel.eden.mod.net;
  * @param name    the member's username
  * @param aspects their pending aspect count
  */
-public record PendingEntry(String name, int aspects) {}
+public record PendingEntry(String name, int aspects) {
+}
