@@ -27,7 +27,11 @@ public final class BridgeWebSocketClient {
 
     /** Callbacks for inbound bridge events (delivered off the game thread). */
     public interface MessageSink {
-        void onDiscordMessage(String author, String content);
+        /**
+         * A relayed Discord message. {@code replyTo}/{@code replyExcerpt} are non-empty
+         * when the Discord message was a reply (the replied-to author and a short quote).
+         */
+        void onDiscordMessage(String author, String content, String replyTo, String replyExcerpt);
 
         /** A bridge user just logged in (presence notice). */
         void onLoginNotice(String username);
@@ -432,7 +436,11 @@ public final class BridgeWebSocketClient {
             JsonObject obj = JsonParser.parseString(payload).getAsJsonObject();
             switch (get(obj, "type")) {
                 case "discordMessage" ->
-                    sink.onDiscordMessage(get(obj, "author"), get(obj, "content"));
+                    sink.onDiscordMessage(
+                            get(obj, "author"),
+                            get(obj, "content"),
+                            get(obj, "replyTo"),
+                            get(obj, "replyExcerpt"));
                 case "loginNotice" -> sink.onLoginNotice(get(obj, "username"));
                 case "logoutNotice" -> sink.onLogoutNotice(get(obj, "username"));
                 case "onlineList" -> sink.onOnlineList(getStringArray(obj, "users"));

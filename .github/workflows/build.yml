@@ -1,0 +1,51 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write          # needed to create a Release on tag pushes
+
+jobs:
+  build:
+    name: build mod jar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build
+        run: ./gradlew build --no-daemon --stacktrace
+
+      # The remapped mod jar, excluding the -sources jar.
+      - name: Stage release jar
+        id: jar
+        run: |
+          jar=$(ls build/libs/eden-bridge-*.jar | grep -v -- '-sources' | head -n1)
+          echo "path=$jar" >> "$GITHUB_OUTPUT"
+          echo "Built $jar"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eden-bridge-jar
+          path: ${{ steps.jar.outputs.path }}
+
+      # On a version tag (e.g. v1.0.0), publish a GitHub Release with the jar attached.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.jar.outputs.path }}
+          generate_release_notes: true

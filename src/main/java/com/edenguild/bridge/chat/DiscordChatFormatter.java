@@ -155,14 +155,52 @@ public final class DiscordChatFormatter {
         return out;
     }
 
+    // Inline reply excerpt is truncated to this many characters (full text on hover).
+    private static final int EXCERPT_MAX = 50;
+
     /** Build the guild-styled chat line for a relayed Discord message. */
     public static Component format(String author, String content) {
+        return format(author, content, "", "");
+    }
+
+    /**
+     * Build the guild-styled chat line for a relayed Discord message, optionally with
+     * reply context. When {@code replyTo} is non-empty the line reads
+     * "<author> replied to <replyTo>: <content>"; a short quote of the replied-to
+     * message is shown inline (gray) and the full quote appears on hover.
+     */
+    public static Component format(
+            String author, String content, String replyTo, String replyExcerpt) {
         MutableComponent body = Component.empty()
                 .append(Component.literal(pillLabel("discord"))
-                        .withStyle(Style.EMPTY.withFont(PILL_FONT).withColor(ChatFormatting.GREEN)))
-                .append(Component.literal(" " + author + ": ").withStyle(ChatFormatting.GREEN))
-                .append(linkify(content));
+                        .withStyle(Style.EMPTY.withFont(PILL_FONT).withColor(ChatFormatting.GREEN)));
+        if (replyTo != null && !replyTo.isEmpty()) {
+            body.append(Component.literal(" " + author).withStyle(ChatFormatting.GREEN))
+                    .append(Component.literal(" replied to ").withStyle(ChatFormatting.GRAY))
+                    .append(replyTarget(replyTo, replyExcerpt))
+                    .append(Component.literal(": ").withStyle(ChatFormatting.GREEN));
+        } else {
+            body.append(Component.literal(" " + author + ": ").withStyle(ChatFormatting.GREEN));
+        }
+        body.append(linkify(content));
         return withGuildPrefix(body);
+    }
+
+    /** The "replyTo (excerpt)" segment: name in green, inline quote gray, full quote on hover. */
+    private static MutableComponent replyTarget(String replyTo, String replyExcerpt) {
+        MutableComponent segment =
+                Component.literal(replyTo).withStyle(ChatFormatting.GREEN);
+        String quote = replyExcerpt == null ? "" : ChatText.normalize(replyExcerpt);
+        if (!quote.isEmpty()) {
+            String shown = quote.length() > EXCERPT_MAX
+                    ? quote.substring(0, EXCERPT_MAX).strip() + "…"
+                    : quote;
+            Style hover = Style.EMPTY
+                    .withColor(ChatFormatting.DARK_GRAY)
+                    .withHoverEvent(new HoverEvent.ShowText(Component.literal(quote)));
+            segment.append(Component.literal(" (" + shown + ")").setStyle(hover));
+        }
+        return segment;
     }
 
     /** Render message text with any http(s) URLs as clickable, underlined aqua links. */

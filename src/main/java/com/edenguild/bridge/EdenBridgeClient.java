@@ -11,6 +11,7 @@ import com.edenguild.bridge.chat.GuildAnnounceParser;
 import com.edenguild.bridge.chat.GuildChatParser;
 import com.edenguild.bridge.chat.GuildEvent;
 import com.edenguild.bridge.chat.GuildEventParser;
+import com.edenguild.bridge.chat.GuildLevelUpParser;
 import com.edenguild.bridge.chat.GuildReward;
 import com.edenguild.bridge.chat.GuildRewardParser;
 import com.edenguild.bridge.chat.LevelUp;
@@ -77,6 +78,7 @@ public final class EdenBridgeClient implements ClientModInitializer {
     private final ChatRelay guildEventRelay = new ChatRelay();
     private final ChatRelay guildAnnounceRelay = new ChatRelay();
     private final ChatRelay levelUpRelay = new ChatRelay();
+    private final ChatRelay guildLevelUpRelay = new ChatRelay();
     private final ChatRelay shoutRelay = new ChatRelay();
     private final ChatRelay annihilationRelay = new ChatRelay();
     private final ChatRelay itemCardRelay = new ChatRelay();
@@ -197,7 +199,7 @@ public final class EdenBridgeClient implements ClientModInitializer {
         // tunnel URL changes and the user re-links); otherwise a stale client can
         // get stuck retrying the old URL forever.
         if (socket != null) {
-            if (config.backendBaseUrl.equals(socketUrl) && config.jwt.equals(socketJwt)) {
+            if (config.backendBaseUrl.equals(socketUrl) && config.jwt().equals(socketJwt)) {
                 return;
             }
             socket.close();
@@ -206,11 +208,13 @@ public final class EdenBridgeClient implements ClientModInitializer {
         try {
             socket = BridgeWebSocketClient.create(
                     config.backendBaseUrl,
-                    config.jwt,
+                    config.jwt(),
                     new BridgeWebSocketClient.MessageSink() {
                         @Override
-                        public void onDiscordMessage(String author, String content) {
-                            display(() -> DiscordChatFormatter.format(author, content));
+                        public void onDiscordMessage(
+                                String author, String content, String replyTo, String replyExcerpt) {
+                            display(() ->
+                                    DiscordChatFormatter.format(author, content, replyTo, replyExcerpt));
                         }
 
                         @Override
@@ -263,7 +267,7 @@ public final class EdenBridgeClient implements ClientModInitializer {
                     },
                     this::onBridgeConnected);
             socketUrl = config.backendBaseUrl;
-            socketJwt = config.jwt;
+            socketJwt = config.jwt();
             socket.start();
         } catch (IllegalArgumentException e) {
             LOGGER.warn("Not connecting: {}", e.getMessage());
@@ -623,6 +627,16 @@ public final class EdenBridgeClient implements ClientModInitializer {
             }
             return;
         }
+        // Guild level-up banner ("Eden is now level N  +<reward>"), relayed verbatim
+        // into the bridge chat since the reward tail differs at every level.
+        Optional<String> guildLevel = GuildLevelUpParser.parse(message);
+        if (guildLevel.isPresent()) {
+            String text = guildLevel.get();
+            if (guildLevelUpRelay.shouldSend(new CapturedMessage("guildlevel", null, text))) {
+                current.sendGuildAnnounce(text);
+            }
+            return;
+        }
         if (!GuildChatParser.looksLikeGuildChat(message)) {
             return;
         }
@@ -719,7 +733,7 @@ public final class EdenBridgeClient implements ClientModInitializer {
         new AuthFlow().begin(config.backendBaseUrl, new AuthFlow.Callback() {
             @Override
             public void onSuccess(String jwt, long expiresAt) {
-                config.jwt = jwt;
+                config.setJwt(jwt);
                 config.jwtExpiresAt = expiresAt;
                 config.save();
                 Minecraft.getInstance().execute(() -> {

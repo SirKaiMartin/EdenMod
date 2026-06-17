@@ -3,6 +3,7 @@ package com.edenguild.bridge.auth;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -57,7 +58,15 @@ public final class AuthFlow {
             JsonObject start = postJson(base + "/auth/start");
             String authorizationUrl = start.get("authorizationUrl").getAsString();
             String pollToken = start.get("pollToken").getAsString();
-            Util.getPlatform().openUri(URI.create(authorizationUrl));
+            // Never hand an arbitrary scheme to the OS protocol handler: a hostile or
+            // compromised backend could return e.g. ms-msdt:/file:/search-ms: and turn
+            // "open in browser" into local code execution. Only ever open https.
+            URI authUri = URI.create(authorizationUrl);
+            if (authUri.getScheme() == null || !authUri.getScheme().equalsIgnoreCase("https")) {
+                callback.onError("Backend returned a non-https authorization URL; refusing to open it.");
+                return;
+            }
+            Util.getPlatform().openUri(authUri);
             pollUntilComplete(base, pollToken, callback);
         } catch (Exception e) {
             LOGGER.warn("Link flow failed", e);
@@ -68,8 +77,9 @@ public final class AuthFlow {
     private void pollUntilComplete(String base, String pollToken, Callback callback)
             throws Exception {
         for (int attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+            String encodedToken = URLEncoder.encode(pollToken, StandardCharsets.UTF_8);
             HttpResponse<String> response = http.send(
-                    HttpRequest.newBuilder(URI.create(base + "/auth/status?token=" + pollToken))
+                    HttpRequest.newBuilder(URI.create(base + "/auth/status?token=" + encodedToken))
                             .GET()
                             .build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -104,7 +114,16 @@ public final class AuthFlow {
         return obj.has(key) && !obj.get(key).isJsonNull() ? obj.get(key).getAsString() : "";
     }
 
-    /** Read the (unverified) {@code exp} claim so we can schedule re-auth. */
+    /**
+     * Read the {@code exp} claim purely to schedule re-auth before the token lapses.
+     *
+     * <p><strong>This does NOT authenticate the token.</strong> The JWT signature is
+     * never verified here (the client has no key to verify it with), so the parsed
+     * claims must never drive any security decision on the client. The bridge backend
+     * is the sole authority: it must re-validate the signature (and any claims it
+     * trusts) on every authenticated request, since a MITM or hostile backend could
+     * hand the mod a forged token with an arbitrary {@code exp}.
+     */
     public static long extractExpiry(String jwt) {
         try {
             String[] parts = jwt.split("\\.");
