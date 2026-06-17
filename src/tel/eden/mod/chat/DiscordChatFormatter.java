@@ -112,6 +112,39 @@ public final class DiscordChatFormatter {
                         .withStyle(ChatFormatting.GOLD));
     }
 
+    /** "EdenMod — update available (x.y.z)  [Download] [Link]" with clickable actions. */
+    public static Component updateAvailable(String version, String pageUrl) {
+        Style download = Style.EMPTY
+                .withColor(ChatFormatting.GREEN)
+                .withUnderlined(true)
+                .withClickEvent(new ClickEvent.RunCommand("/eden update download"))
+                .withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal("Download it now; it applies when you close the game")));
+        MutableComponent line = Component.empty()
+                .append(prefix(SHIELD))
+                .append(Component.literal("EdenMod — update available (" + version + ")  ")
+                        .withStyle(ChatFormatting.GOLD))
+                .append(Component.literal("[Download]").setStyle(download));
+        if (pageUrl != null && !pageUrl.isEmpty()) {
+            Style link = Style.EMPTY
+                    .withColor(ChatFormatting.AQUA)
+                    .withUnderlined(true)
+                    .withClickEvent(new ClickEvent.OpenUrl(URI.create(pageUrl)))
+                    .withHoverEvent(new HoverEvent.ShowText(
+                            Component.literal("Open the release on GitHub")));
+            line.append(Component.literal("  "))
+                    .append(Component.literal("[Link]").setStyle(link));
+        }
+        return line;
+    }
+
+    /** A green/gold/red client-side notice line with the guild shield prefix. */
+    public static Component systemLine(String text, ChatFormatting color) {
+        return Component.empty()
+                .append(prefix(SHIELD))
+                .append(Component.literal(text).withStyle(color));
+    }
+
     /** A client-side list of who is currently connected to the bridge. */
     public static Component onlineList(java.util.List<String> users) {
         String body = users.isEmpty()

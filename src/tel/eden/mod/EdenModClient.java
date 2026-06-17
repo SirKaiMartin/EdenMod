@@ -33,6 +33,9 @@ import tel.eden.mod.net.BridgeWebSocketClient;
 import tel.eden.mod.net.PartyInfo;
 import tel.eden.mod.net.PendingEntry;
 import tel.eden.mod.reward.GuildRewards;
+import tel.eden.mod.update.UpdateChecker;
+import tel.eden.mod.update.UpdateInfo;
+import tel.eden.mod.update.UpdateInstaller;
 import tel.eden.mod.util.Wynncraft;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -60,6 +63,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import org.lwjgl.glfw.GLFW;
@@ -118,6 +122,13 @@ public final class EdenModClient implements ClientModInitializer {
     private String socketUrl;
     private String socketJwt;
     private boolean onWynncraft;
+    // GitHub update check: run once per game session; the prompt offers a one-click
+    // download (applied on game close) and a link to the release page.
+    private final UpdateChecker updateChecker = new UpdateChecker();
+    private final UpdateInstaller updateInstaller = new UpdateInstaller();
+    private volatile UpdateInfo pendingUpdate;
+    private volatile boolean updateChecked;
+    private volatile boolean updateStaged;
     // Set on game join, sent once the bridge connects, cleared on send/disconnect, so
     // a "logged in" notice fires per game session (not on every WS reconnect).
     private volatile boolean loginPending;
@@ -155,6 +166,7 @@ public final class EdenModClient implements ClientModInitializer {
             loginPending = true;
             evaluateGating(client);
             remindIfUnlinked();
+            checkForUpdateOnce();
             if (onWynncraft) {
                 guildRewards.ensureFresh(playerName());
             }
@@ -174,6 +186,15 @@ public final class EdenModClient implements ClientModInitializer {
                             })))
                     .then(buildPartyCommand())
                     .then(buildAnnihilationCommand())
+                    .then(ClientCommandManager.literal("update")
+                            .executes(ctx -> {
+                                updatePrompt(ctx.getSource());
+                                return 1;
+                            })
+                            .then(ClientCommandManager.literal("download").executes(ctx -> {
+                                updateDownload(ctx.getSource());
+                                return 1;
+                            })))
                     .then(ClientCommandManager.literal("help").executes(ctx -> {
                         showHelp(ctx.getSource());
                         return 1;
@@ -293,6 +314,84 @@ public final class EdenModClient implements ClientModInitializer {
         if (onWynncraft && config.enabled && !config.hasValidJwt()) {
             display(DiscordChatFormatter::linkReminder);
         }
+    }
+
+    /** Check GitHub for a newer release once per session; prompt in chat if found. */
+    private void checkForUpdateOnce() {
+        if (updateChecked) {
+            return;
+        }
+        updateChecked = true;
+        Thread thread = new Thread(() -> updateChecker.check().ifPresent(update -> {
+            pendingUpdate = update;
+            display(() -> DiscordChatFormatter.updateAvailable(update.version(), update.pageUrl()));
+        }), "edenmod-update-check");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** {@code /eden update}: show the prompt if one is pending, else re-check + report. */
+    private void updatePrompt(FabricClientCommandSource source) {
+        UpdateInfo cached = pendingUpdate;
+        if (cached != null) {
+            source.sendFeedback(DiscordChatFormatter.updateAvailable(cached.version(), cached.pageUrl()));
+            return;
+        }
+        source.sendFeedback(
+                DiscordChatFormatter.systemLine("Checking for updates...", ChatFormatting.GREEN));
+        Thread thread = new Thread(() -> {
+            UpdateInfo update = updateChecker.check().orElse(null);
+            if (update != null) {
+                pendingUpdate = update;
+                display(() ->
+                        DiscordChatFormatter.updateAvailable(update.version(), update.pageUrl()));
+            } else {
+                String current = UpdateChecker.currentVersion();
+                display(() -> DiscordChatFormatter.systemLine(
+                        "EdenMod is up to date" + (current == null ? "" : " (" + current + ")") + ".",
+                        ChatFormatting.GREEN));
+            }
+        }, "edenmod-update-check");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** {@code /eden update download}: fetch the pending update; it applies on game close. */
+    private void updateDownload(FabricClientCommandSource source) {
+        UpdateInfo info = pendingUpdate;
+        if (info == null) {
+            source.sendFeedback(DiscordChatFormatter.systemLine(
+                    "No update available. Run /eden update to check.", ChatFormatting.GOLD));
+            return;
+        }
+        if (updateStaged) {
+            source.sendFeedback(DiscordChatFormatter.systemLine(
+                    "Update already downloaded — it applies when you close the game.",
+                    ChatFormatting.GREEN));
+            return;
+        }
+        source.sendFeedback(DiscordChatFormatter.systemLine(
+                "Downloading EdenMod " + info.version() + "...", ChatFormatting.GREEN));
+        Thread thread = new Thread(() -> {
+            UpdateInstaller.Result result = updateInstaller.downloadAndStage(info);
+            switch (result) {
+                case SCHEDULED -> {
+                    updateStaged = true;
+                    display(() -> DiscordChatFormatter.systemLine(
+                            "EdenMod " + info.version()
+                                    + " downloaded — it applies when you close the game.",
+                            ChatFormatting.GREEN));
+                }
+                case NOT_INSTALLED_FROM_JAR -> display(() -> DiscordChatFormatter.systemLine(
+                        "Couldn't auto-update (not running from a jar). Use the link to download.",
+                        ChatFormatting.GOLD));
+                case FAILED -> display(() -> DiscordChatFormatter.systemLine(
+                        "Update download failed. Use the link to download it manually.",
+                        ChatFormatting.RED));
+            }
+        }, "edenmod-update-download");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private void requestOnline(FabricClientCommandSource source) {
