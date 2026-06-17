@@ -10,6 +10,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +24,10 @@ import org.slf4j.LoggerFactory;
  */
 public final class AuthFlow {
     private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
-    private static final String MOD_VERSION = "1.0.0";
+    private static final String MOD_VERSION = FabricLoader.getInstance()
+            .getModContainer("edenmod")
+            .map(c -> c.getMetadata().getVersion().getFriendlyString())
+            .orElse("unknown");
     private static final int POLL_ATTEMPTS = 150; // 150 * 2s = 5 minutes
     private static final long POLL_INTERVAL_MS = 2000L;
 
