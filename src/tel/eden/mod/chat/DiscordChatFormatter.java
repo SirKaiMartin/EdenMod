@@ -128,7 +128,7 @@ public final class DiscordChatFormatter {
 		}
 		MutableComponent out = Component.empty().append(prefix(SHIELD)).append(Component.literal("Pending aspects (" + entries.size() + "):").withStyle(ChatFormatting.GREEN));
 		for (PendingEntry entry : entries) {
-			String command = "/gift " + entry.name() + " aspect " + entry.aspects();
+			String command = "/eden gift " + entry.name() + " aspect " + entry.aspects();
 			Style click = Style.EMPTY.withColor(ChatFormatting.YELLOW).withUnderlined(true).withClickEvent(new ClickEvent.SuggestCommand(command)).withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to fill: " + command)));
 			out.append("\n").append(Component.literal("  " + entry.name() + " ").withStyle(ChatFormatting.AQUA)).append(Component.literal("[" + entry.aspects() + " aspects]").setStyle(click));
 		}

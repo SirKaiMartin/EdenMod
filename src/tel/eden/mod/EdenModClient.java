@@ -147,7 +147,7 @@ public final class EdenModClient implements ClientModInitializer {
 		instance = this;
 		config = BridgeConfig.load();
 
-		// Report the exact count of each completed /gift run to the backend, so the
+		// Report the exact count of each completed /eden gift run to the backend, so the
 		// reward log shows the real total instead of a count inferred from chat.
 		guildRewards.setReporter((receiver, type, count) -> {
 			BridgeWebSocketClient current = socket;
@@ -182,12 +182,10 @@ public final class EdenModClient implements ClientModInitializer {
 			}).then(ClientCommandManager.literal("download").executes(ctx -> {
 				updateDownload(ctx.getSource());
 				return 1;
-			}))).then(ClientCommandManager.literal("help").executes(ctx -> {
+			}))).then(buildGiftCommand()).then(ClientCommandManager.literal("dump").then(ClientCommandManager.argument("member", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> dumpEmeralds(ctx.getSource(), StringArgumentType.getString(ctx, "member"))))).then(ClientCommandManager.literal("help").executes(ctx -> {
 				showHelp(ctx.getSource());
 				return 1;
 			})));
-			dispatcher.register(buildGiftCommand());
-			dispatcher.register(ClientCommandManager.literal("dumpemeralds").then(ClientCommandManager.argument("member", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> dumpEmeralds(ctx.getSource(), StringArgumentType.getString(ctx, "member")))));
 		});
 
 		LOGGER.info("EdenMod initialised");
@@ -380,7 +378,7 @@ public final class EdenModClient implements ClientModInitializer {
 		current.sendAspectsPendingRequest();
 	}
 
-	/** Build {@code /gift <member> <aspect|emerald|tome> <amount>} (Chiefs only). */
+	/** Build {@code /eden gift <member> <aspect|emerald|tome> <amount>} (Chiefs only). */
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildGiftCommand() {
 		return ClientCommandManager.literal("gift").then(ClientCommandManager.argument("member", StringArgumentType.word()).suggests(this::suggestMembers).then(giftTypeArg("aspect", GuildRewards.RewardType.ASPECT)).then(giftTypeArg("emerald", GuildRewards.RewardType.EMERALD)).then(giftTypeArg("tome", GuildRewards.RewardType.TOME)));
 	}
@@ -530,17 +528,17 @@ public final class EdenModClient implements ClientModInitializer {
 		return Component.literal("Not connected to the Eden bridge.").withStyle(net.minecraft.ChatFormatting.RED);
 	}
 
+	private record HelpEntry(String command, String description) {
+	}
+
+	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden party announce on|off", "toggle the party feed"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help"));
+
 	/** Print the in-game command list client-side. */
 	private void showHelp(FabricClientCommandSource source) {
 		MutableComponent help = Component.literal("EdenMod — in-game commands:").withStyle(net.minecraft.ChatFormatting.GREEN);
-		help.append(helpLine("/eden online", "who's connected to the bridge"));
-		help.append(helpLine("/eden party", "list open parties (click to join)"));
-		help.append(helpLine("/eden party create <raid> [note]", "open a raid party"));
-		help.append(helpLine("/eden party join <id>", "join a party"));
-		help.append(helpLine("/eden party leave [id]", "leave your party"));
-		help.append(helpLine("/eden party announce on|off", "toggle the party feed"));
-		help.append(helpLine("/eden anni <size> [note]", "open an Annihilation party (2-10)"));
-		help.append(helpLine("/eden help", "this help"));
+		for (HelpEntry entry : HELP_ENTRIES) {
+			help.append(helpLine(entry.command(), entry.description()));
+		}
 		help.append(Component.literal("\nPress B to open the bridge config screen.").withStyle(net.minecraft.ChatFormatting.DARK_GRAY));
 		source.sendFeedback(help);
 	}

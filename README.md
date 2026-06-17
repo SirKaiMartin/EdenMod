@@ -33,23 +33,8 @@ session so one account's token cannot be reused by another.
 
 ### In-game commands
 
-These are available in Minecraft once linked:
-
-| Command | What it does |
-| ------- | ------------ |
-| `/eden online` | Who is currently connected to the bridge |
-| `/eden party` · `/eden party create <raid> [note]` | List or open raid parties (clickable `[JOIN #id]`) |
-| `/eden party join <id>` · `/eden party leave [id]` | Join or leave a party |
-| `/eden party announce on\|off` | Toggle the in-chat party feed |
-| `/eden anni <size> [note]` | Open an Annihilation party (2–10 players) |
-| `/eden aspects pending` | Members' pending aspects — **Chiefs only** (reward helper) |
-| `/gift <member> <aspect\|emerald\|tome> <amount>` | Gift guild rewards — **Chiefs only** |
-| `/dumpemeralds <member>` | Gift all guild-bank emeralds to a member — **Chiefs only** |
-| `/eden help` | The in-game command list |
-
-The chief-only `/gift` and `/dumpemeralds` helpers automate the in-game
-guild-manage menu to hand out rewards; only use them in line with your guild's and
-Wynncraft's rules (see below).
+Run `/eden help` in-game for the full command list.
+Highlights include `/eden party` for raid parties and `/eden anni` for Annihilation parties.
 
 ## Wynncraft ToS considerations
 
@@ -63,6 +48,3 @@ chat relays and client mods touch areas Wynncraft's rules speak to:
   messages into Minecraft — Discord messages are display-only.
 - Members opt in by installing the mod and linking their own account; account
   linking is per-user via official Wynncraft OAuth2.
-- Review the current [Wynncraft API terms](https://docs.wynncraft.com) and
-  in-game rules before deploying to your guild, and disable the bridge if a
-  staff member asks.
