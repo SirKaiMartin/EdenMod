@@ -55,6 +55,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -64,8 +65,11 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,6 +80,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class EdenModClient implements ClientModInitializer {
 	public static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final String MOD_VERSION = FabricLoader.getInstance().getModContainer("edenmod").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
 
 	private static EdenModClient instance;
 
@@ -132,6 +137,17 @@ public final class EdenModClient implements ClientModInitializer {
 	// Set on game join, sent once the bridge connects, cleared on send/disconnect, so
 	// a "logged in" notice fires per game session (not on every WS reconnect).
 	private volatile boolean loginPending;
+	// True when the player is confirmed to be in a Wynncraft game world (or class
+	// selection screen). False while in queue, on the title screen, or AFK-queued.
+	// Set by welcome-message detection and a periodic tab-list check; cleared on disconnect.
+	private volatile boolean inGameWorld = false;
+	// Tick counters for the periodic tab check and presence heartbeat.
+	private int tabCheckTick = 0;
+	private int presenceTick = 0;
+	private static final int TAB_CHECK_INTERVAL_TICKS = 60; // 3 s at 20 tps
+	private static final int PRESENCE_INTERVAL_TICKS = 600; // 30 s at 20 tps
+	// Silent JWT renewal: trigger this many seconds before expiry.
+	private static final long RENEWAL_THRESHOLD_SECS = 30L * 24 * 60 * 60; // 30 days
 
 	/** The live mod instance (used by the chat-capture mixin). */
 	public static EdenModClient instance() {
@@ -163,6 +179,7 @@ public final class EdenModClient implements ClientModInitializer {
 			evaluateGating(client);
 			remindIfUnlinked();
 			checkForUpdateOnce();
+			checkTokenRenewal();
 			if (onWynncraft) {
 				guildRewards.ensureFresh(playerName());
 			}
@@ -170,7 +187,11 @@ public final class EdenModClient implements ClientModInitializer {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> disconnect());
 		ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
-			dispatcher.register(ClientCommandManager.literal("eden").then(ClientCommandManager.literal("online").executes(ctx -> {
+			dispatcher.register(ClientCommandManager.literal("eden").then(ClientCommandManager.literal("open").executes(ctx -> {
+				Minecraft mc = Minecraft.getInstance();
+				mc.execute(() -> mc.setScreen(new BridgeConfigScreen(mc.screen, EdenModClient.instance())));
+				return 1;
+			})).then(ClientCommandManager.literal("online").executes(ctx -> {
 				requestOnline(ctx.getSource());
 				return 1;
 			})).then(ClientCommandManager.literal("aspects").then(ClientCommandManager.literal("pending").executes(ctx -> {
@@ -202,6 +223,22 @@ public final class EdenModClient implements ClientModInitializer {
 				display(() -> DiscordChatFormatter.updateAvailable(update.version(), update.pageUrl()));
 			}
 		}
+		// Tab check every 3 seconds: Wynncraft populates the tab list with "Global [XX]"
+		// column headers when the player is in a game world or class selection screen,
+		// and sends nothing in the queue. This drives the dormant/active state directly.
+		if (onWynncraft && ++tabCheckTick >= TAB_CHECK_INTERVAL_TICKS) {
+			tabCheckTick = 0;
+			setInGameWorld(checkWynncraftTabActive(client));
+		}
+		// Presence heartbeat every 30 seconds: keeps the server's state fresh even if
+		// an intermediate sendPresence call was dropped.
+		if (++presenceTick >= PRESENCE_INTERVAL_TICKS) {
+			presenceTick = 0;
+			BridgeWebSocketClient current = socket;
+			if (current != null && onWynncraft) {
+				current.sendPresence(inGameWorld);
+			}
+		}
 	}
 
 	/** Re-evaluate server gating + connection state after a (re)connect. */
@@ -228,7 +265,7 @@ public final class EdenModClient implements ClientModInitializer {
 			socket = null;
 		}
 		try {
-			socket = BridgeWebSocketClient.create(config.backendBaseUrl, config.jwt, new BridgeWebSocketClient.MessageSink() {
+			socket = BridgeWebSocketClient.create(config.backendBaseUrl, config.jwt, MOD_VERSION, new BridgeWebSocketClient.MessageSink() {
 				@Override
 				public void onDiscordMessage(String author, String content, String replyTo, String replyExcerpt) {
 					display(() -> DiscordChatFormatter.format(author, content, replyTo, replyExcerpt));
@@ -280,6 +317,11 @@ public final class EdenModClient implements ClientModInitializer {
 				public void onPartyFeedback(String message) {
 					display(() -> PartyFormatter.feedback(message));
 				}
+
+				@Override
+				public void onVersionRejected() {
+					display(() -> Component.literal("[EdenMod] This mod version is no longer accepted by the server — use /eden update to upgrade.").withStyle(ChatFormatting.RED));
+				}
 			}, this::onBridgeConnected);
 			socketUrl = config.backendBaseUrl;
 			socketJwt = config.jwt;
@@ -290,11 +332,51 @@ public final class EdenModClient implements ClientModInitializer {
 		}
 	}
 
+	/** A clickable "[B]" button (or whatever key is bound) that opens the config screen. */
+	private Component openConfigButton() {
+		String keyName = openConfigKey.getTranslatedKeyMessage().getString();
+		Style style = Style.EMPTY.withColor(ChatFormatting.AQUA).withUnderlined(true).withClickEvent(new ClickEvent.RunCommand("/eden open")).withHoverEvent(new HoverEvent.ShowText(Component.literal("Open EdenMod settings")));
+		return Component.literal("[" + keyName + "]").setStyle(style);
+	}
+
 	/** On login, nudge players who haven't linked yet to do so. */
 	private void remindIfUnlinked() {
-		if (onWynncraft && config.enabled && !config.hasValidJwt()) {
-			display(DiscordChatFormatter::linkReminder);
+		if (!onWynncraft || !config.enabled)
+			return;
+		Component btn = openConfigButton();
+		if (config.jwt.isEmpty()) {
+			display(() -> DiscordChatFormatter.linkReminder(btn));
+		} else if (!config.hasValidJwt()) {
+			display(() -> DiscordChatFormatter.tokenExpired(btn));
 		}
+	}
+
+	/**
+	 * Silently renew the JWT when it is within 30 days of expiry, so players
+	 * never need to re-link as long as they play at least once per token TTL.
+	 */
+	private void checkTokenRenewal() {
+		if (config.jwt.isEmpty() || config.jwtExpiresAt == 0 || config.backendBaseUrl.isBlank())
+			return;
+		long remaining = config.jwtExpiresAt - System.currentTimeMillis() / 1000L;
+		// Already expired → remindIfUnlinked() shows the "token expired" message; skip renewal.
+		if (remaining <= 0 || remaining > RENEWAL_THRESHOLD_SECS)
+			return;
+		LOGGER.info("JWT expires in {}s, attempting silent renewal", remaining);
+		new AuthFlow().refresh(config.backendBaseUrl, config.jwt, new AuthFlow.Callback() {
+			@Override
+			public void onSuccess(String jwt, long expiresAt) {
+				config.jwt = jwt;
+				config.jwtExpiresAt = expiresAt;
+				config.save();
+				LOGGER.info("JWT silently renewed");
+			}
+
+			@Override
+			public void onError(String messageText) {
+				LOGGER.warn("Silent JWT renewal failed: {}", messageText);
+			}
+		});
 	}
 
 	/** Check GitHub for a newer release once per session; prompt in chat if found. */
@@ -531,7 +613,7 @@ public final class EdenModClient implements ClientModInitializer {
 	private record HelpEntry(String command, String description) {
 	}
 
-	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden party announce on|off", "toggle the party feed"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help"));
+	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden open", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden party announce on|off", "toggle the party feed"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
 
 	/** Print the in-game command list client-side. */
 	private void showHelp(FabricClientCommandSource source) {
@@ -539,12 +621,37 @@ public final class EdenModClient implements ClientModInitializer {
 		for (HelpEntry entry : HELP_ENTRIES) {
 			help.append(helpLine(entry.command(), entry.description()));
 		}
-		help.append(Component.literal("\nPress B to open the bridge config screen.").withStyle(net.minecraft.ChatFormatting.DARK_GRAY));
+		help.append(Component.literal("\nPress ").withStyle(ChatFormatting.DARK_GRAY)).append(openConfigButton()).append(Component.literal(" to open the bridge config screen.").withStyle(ChatFormatting.DARK_GRAY));
 		source.sendFeedback(help);
 	}
 
 	private static MutableComponent helpLine(String command, String description) {
 		return Component.empty().append(Component.literal("\n  " + command).withStyle(net.minecraft.ChatFormatting.AQUA)).append(Component.literal(" — " + description).withStyle(net.minecraft.ChatFormatting.GRAY));
+	}
+
+	/** Immediately send presence and reconnect the socket if the world state changed. */
+	private void setInGameWorld(boolean active) {
+		if (inGameWorld == active)
+			return;
+		inGameWorld = active;
+		BridgeWebSocketClient current = socket;
+		if (current != null && onWynncraft) {
+			current.sendPresence(active);
+		}
+	}
+
+	/** Returns true when the Wynncraft tab list is visible (game world or /class screen). */
+	private boolean checkWynncraftTabActive(Minecraft mc) {
+		net.minecraft.client.multiplayer.ClientPacketListener conn = mc.getConnection();
+		if (conn == null)
+			return false;
+		for (net.minecraft.client.multiplayer.PlayerInfo info : conn.getOnlinePlayers()) {
+			net.minecraft.network.chat.Component name = info.getTabListDisplayName();
+			if (name != null && name.getString().contains("Global [")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** On a fresh bridge connection, announce this session's login exactly once. */
@@ -554,6 +661,7 @@ public final class EdenModClient implements ClientModInitializer {
 			BridgeWebSocketClient current = socket;
 			if (current != null) {
 				current.sendLogin();
+				current.sendPresence(inGameWorld); // send whatever state we already detected
 			}
 		}
 	}
@@ -561,6 +669,9 @@ public final class EdenModClient implements ClientModInitializer {
 	private synchronized void disconnect() {
 		onWynncraft = false;
 		loginPending = false;
+		inGameWorld = false;
+		tabCheckTick = 0;
+		presenceTick = 0;
 		if (socket != null) {
 			socket.close();
 			socket = null;
@@ -574,6 +685,12 @@ public final class EdenModClient implements ClientModInitializer {
 		DiscordChatFormatter.onServerChatLine();
 		BridgeWebSocketClient current = socket;
 		if (!onWynncraft || current == null) {
+			return;
+		}
+		// Entering a Wynncraft game world always sends this greeting. Use it for
+		// immediate active-state detection, faster than the next tab-list check.
+		if (message.getString().contains("Welcome to Wynncraft!")) {
+			setInGameWorld(true);
 			return;
 		}
 		// Guild raid completions are aqua announcements (not player chat); handle

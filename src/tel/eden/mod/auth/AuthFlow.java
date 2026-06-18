@@ -44,6 +44,43 @@ public final class AuthFlow {
 		thread.start();
 	}
 
+	/**
+	 * Silently renew {@code currentJwt} against {@code backendBaseUrl}.
+	 * Calls {@link Callback#onSuccess} with a fresh JWT if the server accepts it;
+	 * calls {@link Callback#onError} (with no in-game prompt) if it cannot.
+	 */
+	public void refresh(String backendBaseUrl, String currentJwt, Callback callback) {
+		Thread thread = new Thread(() -> runRefresh(backendBaseUrl, currentJwt, callback), "edenmod-auth-refresh");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private void runRefresh(String backendBaseUrl, String currentJwt, Callback callback) {
+		String base = backendBaseUrl.strip();
+		if (!base.startsWith("https://")) {
+			callback.onError("Backend URL must be https.");
+			return;
+		}
+		if (base.endsWith("/")) {
+			base = base.substring(0, base.length() - 1);
+		}
+		try {
+			HttpResponse<String> response = http.send(HttpRequest.newBuilder(URI.create(base + "/auth/refresh")).header("Authorization", "Bearer " + currentJwt).header("X-Mod-Version", MOD_VERSION).POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+			if (response.statusCode() == 200) {
+				JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
+				String jwt = stringOrEmpty(body, "jwt");
+				if (!jwt.isEmpty()) {
+					callback.onSuccess(jwt, extractExpiry(jwt));
+					return;
+				}
+			}
+			callback.onError("Refresh failed: HTTP " + response.statusCode());
+		} catch (Exception e) {
+			LOGGER.warn("Token refresh failed", e);
+			callback.onError("Refresh error: " + e.getMessage());
+		}
+	}
+
 	private void run(String backendBaseUrl, Callback callback) {
 		String base = backendBaseUrl.strip();
 		if (!base.startsWith("https://")) {

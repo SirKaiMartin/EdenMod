@@ -91,9 +91,14 @@ public final class DiscordChatFormatter {
 		return Component.empty().append(prefix(SHIELD)).append(Component.literal("Successfully linked your account to the Eden bridge!").withStyle(ChatFormatting.GREEN));
 	}
 
-	/** A gold client-side reminder shown on login when the account is not linked. */
-	public static Component linkReminder() {
-		return Component.empty().append(prefix(SHIELD)).append(Component.literal("You're not linked to the Eden bridge. Press B and click Link, " + "or run /account link in Discord.").withStyle(ChatFormatting.GOLD));
+	/** A gold client-side reminder shown on login when the account is not yet linked. */
+	public static Component linkReminder(Component configButton) {
+		return Component.empty().append(prefix(SHIELD)).append(Component.literal("Not linked to the Eden bridge! Press ").withStyle(ChatFormatting.GOLD)).append(configButton).append(Component.literal(" and click Link to link your account!").withStyle(ChatFormatting.GOLD));
+	}
+
+	/** A red client-side notice shown on login when the stored token has expired. */
+	public static Component tokenExpired(Component configButton) {
+		return Component.empty().append(prefix(SHIELD)).append(Component.literal("Bridge token expired! Press ").withStyle(ChatFormatting.RED)).append(configButton).append(Component.literal(" and click Link to re-link.").withStyle(ChatFormatting.RED));
 	}
 
 	/** "EdenMod — update available (x.y.z)  [Download] [Link]" with clickable actions. */

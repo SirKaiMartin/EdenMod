@@ -56,10 +56,14 @@ public final class BridgeWebSocketClient {
 
 		/** A short result line for a party action the player just took in-game. */
 		void onPartyFeedback(String message);
+
+		/** The bridge server rejected this mod version; the player should update. */
+		void onVersionRejected();
 	}
 
 	private final URI uri;
 	private final String jwt;
+	private final String modVersion;
 	private final MessageSink sink;
 	private final Runnable onConnected;
 	private final HttpClient http = HttpClient.newHttpClient();
@@ -73,9 +77,10 @@ public final class BridgeWebSocketClient {
 	private volatile boolean running;
 	private int backoffSeconds = 1;
 
-	private BridgeWebSocketClient(URI uri, String jwt, MessageSink sink, Runnable onConnected) {
+	private BridgeWebSocketClient(URI uri, String jwt, String modVersion, MessageSink sink, Runnable onConnected) {
 		this.uri = uri;
 		this.jwt = jwt;
+		this.modVersion = modVersion;
 		this.sink = sink;
 		this.onConnected = onConnected;
 	}
@@ -86,7 +91,7 @@ public final class BridgeWebSocketClient {
 	 *
 	 * @throws IllegalArgumentException if the URL is not https (TLS is required)
 	 */
-	public static BridgeWebSocketClient create(String backendBaseUrl, String jwt, MessageSink sink, Runnable onConnected) {
+	public static BridgeWebSocketClient create(String backendBaseUrl, String jwt, String modVersion, MessageSink sink, Runnable onConnected) {
 		String base = backendBaseUrl.strip();
 		if (!base.startsWith("https://")) {
 			throw new IllegalArgumentException("bridge backend must be https (refusing non-TLS)");
@@ -95,7 +100,7 @@ public final class BridgeWebSocketClient {
 		if (wss.endsWith("/")) {
 			wss = wss.substring(0, wss.length() - 1);
 		}
-		return new BridgeWebSocketClient(URI.create(wss + "/ws"), jwt, sink, onConnected);
+		return new BridgeWebSocketClient(URI.create(wss + "/ws"), jwt, modVersion, sink, onConnected);
 	}
 
 	/** Start connecting (and keep reconnecting until {@link #close()}). */
@@ -231,6 +236,23 @@ public final class BridgeWebSocketClient {
 		sendType("partyList");
 	}
 
+	/**
+	 * Tell the server whether this client is active in a game world ({@code true})
+	 * or dormant (in queue, hub, or AFK with no recent guild activity — {@code false}).
+	 * The server uses this to compute the consensus quorum without counting clients
+	 * that cannot see guild chat.
+	 */
+	public void sendPresence(boolean active) {
+		WebSocket current = socket;
+		if (current == null) {
+			return;
+		}
+		JsonObject obj = new JsonObject();
+		obj.addProperty("type", "presence");
+		obj.addProperty("active", active);
+		current.sendText(obj.toString(), true);
+	}
+
 	private void sendType(String type) {
 		WebSocket current = socket;
 		if (current == null) {
@@ -352,8 +374,25 @@ public final class BridgeWebSocketClient {
 		if (!running) {
 			return;
 		}
-		http.newWebSocketBuilder().header("Authorization", "Bearer " + jwt).connectTimeout(Duration.ofSeconds(10)).buildAsync(uri, new Listener()).whenComplete((ws, error) -> {
+		http.newWebSocketBuilder().header("Authorization", "Bearer " + jwt).header("X-Mod-Version", modVersion).connectTimeout(Duration.ofSeconds(10)).buildAsync(uri, new Listener()).whenComplete((ws, error) -> {
+			// close() may have been called while the connection was in flight; if so,
+			// discard the socket so the server doesn't see a ghost connection.
+			if (!running) {
+				if (ws != null) {
+					ws.sendClose(WebSocket.NORMAL_CLOSURE, "shutdown");
+				}
+				return;
+			}
 			if (error != null) {
+				Throwable cause = error;
+				while (cause.getCause() != null)
+					cause = cause.getCause();
+				if (cause instanceof java.net.http.WebSocketHandshakeException hse && hse.getResponse().statusCode() == 403) {
+					LOGGER.warn("Bridge rejected mod version {}; update required", modVersion);
+					running = false;
+					sink.onVersionRejected();
+					return;
+				}
 				LOGGER.warn("Bridge WebSocket connect failed: {}", error.toString());
 				scheduleReconnect();
 			} else {
