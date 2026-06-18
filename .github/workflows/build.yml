@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: write          # needed to create the tag + Release
@@ -55,8 +56,11 @@ jobs:
         if: github.ref == 'refs/heads/master'
         run: |
           v=$(grep -E '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          mc=$(grep -E '^minecraft_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
-          echo "Mod version: $v"
+          echo "ver=$v" >> "$GITHUB_OUTPUT"
+          echo "mc=$mc" >> "$GITHUB_OUTPUT"
+          echo "Mod version: $v  MC: $mc"
 
       - name: Check whether the release already exists
         id: release
@@ -80,3 +84,16 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           files: ${{ steps.jar.outputs.path }}
           generate_release_notes: true
+
+      - name: Publish to Modrinth
+        if: github.ref == 'refs/heads/master' && (steps.release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch')
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: ${{ steps.jar.outputs.path }}
+          name: EdenMod ${{ steps.version.outputs.ver }}
+          version: ${{ steps.version.outputs.ver }}
+          version-type: release
+          game-versions: ${{ steps.version.outputs.mc }}
+          loaders: fabric
