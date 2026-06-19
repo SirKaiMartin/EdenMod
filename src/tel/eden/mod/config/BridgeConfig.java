@@ -24,22 +24,20 @@ public final class BridgeConfig {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("edenmod.json");
 
-	/**
-	 * The permanent EdenBot backend URL, baked into the build. It is hard-coded (not
-	 * user-editable) since the bridge lives at a fixed domain; the field below is
-	 * always reset to this on load so old configs that stored a dev-tunnel URL are
-	 * transparently migrated.
-	 */
+	/** The EdenBot backend URL, baked into the build. Never written to the config file. */
 	public static final String DEFAULT_BACKEND_URL = "https://bridge.eden.tel/";
 
-	/** Public HTTPS base URL of the EdenBot backend (always {@link #DEFAULT_BACKEND_URL}). */
-	public String backendBaseUrl = DEFAULT_BACKEND_URL;
+	/** Always {@link #DEFAULT_BACKEND_URL}; transient so it is never written to the config file. */
+	public transient String backendBaseUrl = DEFAULT_BACKEND_URL;
 
 	/** Backend-signed JWT obtained from the link flow; empty until linked. */
 	public String jwt = "";
 
 	/** Unix epoch seconds at which {@link #jwt} expires (0 when unknown). */
 	public long jwtExpiresAt = 0L;
+
+	/** Minecraft username that completed the link flow; empty if never linked or unknown. */
+	public String linkedUsername = "";
 
 	/** Whether the bridge should connect while on Wynncraft. */
 	public boolean enabled = true;
@@ -60,12 +58,6 @@ public final class BridgeConfig {
 	 */
 	public boolean partyAnnounce = true;
 
-	/**
-	 * Whether shared Wynncraft item strings seen in guild chat are decoded (via
-	 * Wynntils) and relayed to the bridge channel as a rendered item card.
-	 */
-	public boolean relayItemCards = true;
-
 	/** Load the config from disk, or return defaults (and write them) if absent. */
 	public static BridgeConfig load() {
 		if (Files.isRegularFile(PATH)) {
@@ -73,9 +65,6 @@ public final class BridgeConfig {
 				String json = Files.readString(PATH, StandardCharsets.UTF_8);
 				BridgeConfig config = GSON.fromJson(json, BridgeConfig.class);
 				if (config != null) {
-					// The backend URL is permanent and hard-coded: always use it,
-					// ignoring any value an older config may have persisted.
-					config.backendBaseUrl = DEFAULT_BACKEND_URL;
 					return config;
 				}
 			} catch (IOException | RuntimeException e) {

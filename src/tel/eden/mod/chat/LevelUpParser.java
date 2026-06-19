@@ -14,7 +14,7 @@ import net.minecraft.network.chat.Component;
  * </pre>
  *
  * <p>The player name is hover-resolved to a real account name (the same way guild
- * chat is), so a "/nick" or styled name still matches the guild roster. The
+ * chat is), so a "/nick" or styled name still matches the guild member list. The
  * profession icon (a custom-font glyph) is stripped by {@link ChatText#normalize}.
  */
 public final class LevelUpParser {

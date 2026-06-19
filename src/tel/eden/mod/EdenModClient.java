@@ -123,7 +123,6 @@ public final class EdenModClient implements ClientModInitializer {
 	private final GuildRewards guildRewards = new GuildRewards();
 	private KeyMapping openConfigKey;
 	private BridgeWebSocketClient socket;
-	private String socketUrl;
 	private String socketJwt;
 	private boolean onWynncraft;
 	// GitHub update check: run once per game session; the prompt offers a one-click
@@ -134,6 +133,10 @@ public final class EdenModClient implements ClientModInitializer {
 	private volatile boolean updateChecked;
 	private volatile boolean updateStaged;
 	private volatile boolean pendingUpdateNotification;
+	// Non-null when the bridge rejected our connection; holds the error code
+	// ("version_rejected", "not_member", "http_401", etc.) so onClientTick can
+	// show the right message once the player is loaded.
+	private volatile String pendingConnectionCode;
 	// Set on game join, sent once the bridge connects, cleared on send/disconnect, so
 	// a "logged in" notice fires per game session (not on every WS reconnect).
 	private volatile boolean loginPending;
@@ -193,7 +196,7 @@ public final class EdenModClient implements ClientModInitializer {
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
 			dispatcher.register(ClientCommandManager.literal("eden").then(ClientCommandManager.literal("config").executes(ctx -> {
 				Minecraft mc = Minecraft.getInstance();
-				mc.execute(() -> mc.setScreen(new BridgeConfigScreen(mc.screen, EdenModClient.instance())));
+				mc.execute(() -> mc.setScreen(BridgeConfigScreen.create(mc.screen, EdenModClient.instance())));
 				return 1;
 			})).then(ClientCommandManager.literal("online").executes(ctx -> {
 				requestOnline(ctx.getSource());
@@ -218,13 +221,26 @@ public final class EdenModClient implements ClientModInitializer {
 
 	private void onClientTick(Minecraft client) {
 		while (openConfigKey.consumeClick()) {
-			client.setScreen(new BridgeConfigScreen(client.screen, this));
+			client.setScreen(BridgeConfigScreen.create(client.screen, this));
 		}
 		if (pendingUpdateNotification && client.player != null) {
 			pendingUpdateNotification = false;
 			UpdateInfo update = pendingUpdate;
 			if (update != null) {
 				display(() -> DiscordChatFormatter.updateAvailable(update.version(), update.pageUrl()));
+			}
+		}
+		String connCode = pendingConnectionCode;
+		if (connCode != null && client.player != null) {
+			pendingConnectionCode = null;
+			switch (connCode) {
+				case "version_rejected" -> display(() -> Component.literal("[EdenMod] This mod version is no longer accepted by the bridge — use /eden update to upgrade.").withStyle(ChatFormatting.RED));
+				case "not_member" -> display(() -> Component.literal("[EdenMod] Only players in the Eden guild may use this mod.").withStyle(ChatFormatting.RED));
+				case "http_401" -> {
+					Component btn = openConfigButton();
+					display(() -> DiscordChatFormatter.tokenExpired(btn));
+				}
+				default -> display(() -> Component.literal("[EdenMod] Could not connect to the bridge. Try re-linking via /eden config.").withStyle(ChatFormatting.RED));
 			}
 		}
 		// Tab check every 3 seconds: Wynncraft populates the tab list with "Global [XX]"
@@ -262,14 +278,14 @@ public final class EdenModClient implements ClientModInitializer {
 		// tunnel URL changes and the user re-links); otherwise a stale client can
 		// get stuck retrying the old URL forever.
 		if (socket != null) {
-			if (config.backendBaseUrl.equals(socketUrl) && config.jwt.equals(socketJwt)) {
+			if (config.jwt.equals(socketJwt)) {
 				return;
 			}
 			socket.close();
 			socket = null;
 		}
 		try {
-			socket = BridgeWebSocketClient.create(config.backendBaseUrl, config.jwt, MOD_VERSION, new BridgeWebSocketClient.MessageSink() {
+			socket = BridgeWebSocketClient.create(BridgeConfig.DEFAULT_BACKEND_URL, config.jwt, MOD_VERSION, new BridgeWebSocketClient.MessageSink() {
 				@Override
 				public void onDiscordMessage(String author, String content, String replyTo, String replyExcerpt) {
 					display(() -> DiscordChatFormatter.format(author, content, replyTo, replyExcerpt));
@@ -323,11 +339,11 @@ public final class EdenModClient implements ClientModInitializer {
 				}
 
 				@Override
-				public void onVersionRejected() {
-					display(() -> Component.literal("[EdenMod] This mod version is no longer accepted by the server — use /eden update to upgrade.").withStyle(ChatFormatting.RED));
+				public void onConnectionRejected(String code) {
+					pendingConnectionCode = code;
+					Minecraft.getInstance().execute(() -> socket = null);
 				}
 			}, this::onBridgeConnected);
-			socketUrl = config.backendBaseUrl;
 			socketJwt = config.jwt;
 			socket.start();
 		} catch (IllegalArgumentException e) {
@@ -360,14 +376,14 @@ public final class EdenModClient implements ClientModInitializer {
 	 * never need to re-link as long as they play at least once per token TTL.
 	 */
 	private void checkTokenRenewal() {
-		if (config.jwt.isEmpty() || config.jwtExpiresAt == 0 || config.backendBaseUrl.isBlank())
+		if (config.jwt.isEmpty() || config.jwtExpiresAt == 0)
 			return;
 		long remaining = config.jwtExpiresAt - System.currentTimeMillis() / 1000L;
 		// Already expired → remindIfUnlinked() shows the "token expired" message; skip renewal.
 		if (remaining <= 0 || remaining > RENEWAL_THRESHOLD_SECS)
 			return;
 		LOGGER.info("JWT expires in {}s, attempting silent renewal", remaining);
-		new AuthFlow().refresh(config.backendBaseUrl, config.jwt, new AuthFlow.Callback() {
+		new AuthFlow().refresh(BridgeConfig.DEFAULT_BACKEND_URL, config.jwt, new AuthFlow.Callback() {
 			@Override
 			public void onSuccess(String jwt, long expiresAt) {
 				config.jwt = jwt;
@@ -517,9 +533,9 @@ public final class EdenModClient implements ClientModInitializer {
 		return Minecraft.getInstance().player != null ? Minecraft.getInstance().player.getGameProfile().name() : null;
 	}
 
-	/** Build the {@code /eden party ...} subcommand tree (list/create/join/leave/announce). */
+	/** Build the {@code /eden party ...} subcommand tree (list/create/join/leave). */
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand() {
-		return ClientCommandManager.literal("party").executes(ctx -> partyList(ctx.getSource())).then(ClientCommandManager.literal("list").executes(ctx -> partyList(ctx.getSource()))).then(ClientCommandManager.literal("create").then(raidLiteral("notg", "Nest of the Grootslangs")).then(raidLiteral("nol", "Orphion's Nexus of Light")).then(raidLiteral("tcc", "The Canyon Colossus")).then(raidLiteral("tna", "The Nameless Anomaly")).then(raidLiteral("wtp", "The Wartorn Palace"))).then(ClientCommandManager.literal("join").then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyJoin(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id"))))).then(ClientCommandManager.literal("leave").executes(ctx -> partyLeave(ctx.getSource(), null)).then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyLeave(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id"))))).then(ClientCommandManager.literal("announce").then(ClientCommandManager.literal("on").executes(ctx -> partyAnnounce(ctx.getSource(), true))).then(ClientCommandManager.literal("off").executes(ctx -> partyAnnounce(ctx.getSource(), false))))
+		return ClientCommandManager.literal("party").executes(ctx -> partyList(ctx.getSource())).then(ClientCommandManager.literal("list").executes(ctx -> partyList(ctx.getSource()))).then(ClientCommandManager.literal("create").then(raidLiteral("notg", "Nest of the Grootslangs")).then(raidLiteral("nol", "Orphion's Nexus of Light")).then(raidLiteral("tcc", "The Canyon Colossus")).then(raidLiteral("tna", "The Nameless Anomaly")).then(raidLiteral("wtp", "The Wartorn Palace"))).then(ClientCommandManager.literal("join").then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyJoin(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id"))))).then(ClientCommandManager.literal("leave").executes(ctx -> partyLeave(ctx.getSource(), null)).then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyLeave(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id")))))
 					// Driven by the "[Create party]" prompt shown when a party fills: runs
 					// /party create then invites each listed member in-game.
 					.then(ClientCommandManager.literal("makeingame").then(ClientCommandManager.argument("members", StringArgumentType.greedyString()).executes(ctx -> makeInGameParty(ctx.getSource(), StringArgumentType.getString(ctx, "members")))));
@@ -603,13 +619,6 @@ public final class EdenModClient implements ClientModInitializer {
 		return 1;
 	}
 
-	private int partyAnnounce(FabricClientCommandSource source, boolean on) {
-		config.partyAnnounce = on;
-		config.save();
-		source.sendFeedback(Component.literal("Party announcements " + (on ? "enabled." : "disabled.")).withStyle(net.minecraft.ChatFormatting.GREEN));
-		return 1;
-	}
-
 	private static Component notConnected() {
 		return Component.literal("Not connected to the Eden bridge.").withStyle(net.minecraft.ChatFormatting.RED);
 	}
@@ -617,7 +626,7 @@ public final class EdenModClient implements ClientModInitializer {
 	private record HelpEntry(String command, String description) {
 	}
 
-	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden party announce on|off", "toggle the party feed"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
+	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
 
 	/** Print the in-game command list client-side. */
 	private void showHelp(FabricClientCommandSource source) {
@@ -651,7 +660,7 @@ public final class EdenModClient implements ClientModInitializer {
 			return false;
 		for (net.minecraft.client.multiplayer.PlayerInfo info : conn.getOnlinePlayers()) {
 			net.minecraft.network.chat.Component name = info.getTabListDisplayName();
-			if (name != null && name.getString().contains("Global [")) {
+			if (name != null && (name.getString().contains("Global [") || name.getString().contains("Island Info"))) {
 				return true;
 			}
 		}
@@ -682,6 +691,7 @@ public final class EdenModClient implements ClientModInitializer {
 		inGameWorld = false;
 		tabCheckTick = 0;
 		presenceTick = 0;
+		pendingConnectionCode = null;
 		if (socket != null) {
 			socket.close();
 			socket = null;
@@ -766,7 +776,7 @@ public final class EdenModClient implements ClientModInitializer {
 			return;
 		}
 		// Level-up announcements, relayed to the bridge chat ONLY for Eden members
-		// (the roster is fetched from the API on join and refreshed periodically).
+		// (the member list is fetched from the API on join and refreshed periodically).
 		Optional<LevelUp> levelUp = LevelUpParser.parse(message);
 		if (levelUp.isPresent()) {
 			LevelUp lu = levelUp.get();
@@ -827,7 +837,7 @@ public final class EdenModClient implements ClientModInitializer {
 	 * No-op unless enabled, Wynntils is installed, and a sender can be resolved.
 	 */
 	private void maybeRelayItemCard(BridgeWebSocketClient current, Component message) {
-		if (!config.relayItemCards || !WynntilsItemDecoder.isAvailable()) {
+		if (!WynntilsItemDecoder.isAvailable()) {
 			return;
 		}
 		Optional<ItemStringDetector.Detected> detected = ItemStringDetector.detect(message.getString());
@@ -875,18 +885,18 @@ public final class EdenModClient implements ClientModInitializer {
 
 	/** Start the browser link flow; persists the JWT on success and (re)connects. */
 	public void startLinkFlow(Runnable onDone) {
-		if (config.backendBaseUrl.isBlank()) {
-			LOGGER.warn("Cannot link: backend URL is not set");
-			onDone.run();
-			return;
-		}
-		new AuthFlow().begin(config.backendBaseUrl, new AuthFlow.Callback() {
+		new AuthFlow().begin(BridgeConfig.DEFAULT_BACKEND_URL, new AuthFlow.Callback() {
 			@Override
 			public void onSuccess(String jwt, long expiresAt) {
 				config.jwt = jwt;
 				config.jwtExpiresAt = expiresAt;
 				config.save();
 				Minecraft.getInstance().execute(() -> {
+					String name = playerName();
+					if (name != null && !name.isEmpty()) {
+						config.linkedUsername = name;
+						config.save();
+					}
 					evaluateGating(Minecraft.getInstance());
 					display(DiscordChatFormatter::linkSuccess);
 					onDone.run();

@@ -57,8 +57,13 @@ public final class BridgeWebSocketClient {
 		/** A short result line for a party action the player just took in-game. */
 		void onPartyFeedback(String message);
 
-		/** The bridge server rejected this mod version; the player should update. */
-		void onVersionRejected();
+		/**
+		 * The bridge server rejected the connection. {@code code} is either the
+		 * application-level error code from the server ({@code "version_rejected"},
+		 * {@code "not_member"}) or {@code "http_<status>"} for HTTP-level rejections
+		 * (e.g. {@code "http_401"} for an invalid JWT).
+		 */
+		void onConnectionRejected(String code);
 	}
 
 	private final URI uri;
@@ -387,10 +392,20 @@ public final class BridgeWebSocketClient {
 				Throwable cause = error;
 				while (cause.getCause() != null)
 					cause = cause.getCause();
-				if (cause instanceof java.net.http.WebSocketHandshakeException hse && hse.getResponse().statusCode() == 403) {
-					LOGGER.warn("Bridge rejected mod version {}; update required", modVersion);
+				// instanceof java.net.http.WebSocketHandshakeException fails in the Fabric
+				// Knot classloader even when the class names match; use string comparison.
+				if (cause.getClass().getName().equals("java.net.http.WebSocketHandshakeException")) {
+					int status = -1;
+					try {
+						Object resp = cause.getClass().getMethod("getResponse").invoke(cause);
+						status = (Integer) resp.getClass().getMethod("statusCode").invoke(resp);
+					} catch (Exception ignored) {
+					}
+					LOGGER.warn("Bridge WebSocket rejected: HTTP {}", status);
+					// 4xx = permanent rejection; only 401 (bad JWT) reaches here now that
+					// version/membership errors are sent as application-level messages.
 					running = false;
-					sink.onVersionRejected();
+					sink.onConnectionRejected("http_" + status);
 					return;
 				}
 				LOGGER.warn("Bridge WebSocket connect failed: {}", error.toString());
@@ -464,6 +479,12 @@ public final class BridgeWebSocketClient {
 				case "partyUpdate" -> sink.onPartyUpdate(get(obj, "event"), get(obj, "actor"), parseParty(obj));
 				case "partyListReply" -> sink.onPartyList(parsePartyList(obj));
 				case "partyFeedback" -> sink.onPartyFeedback(get(obj, "message"));
+				case "error" -> {
+					String code = get(obj, "code");
+					LOGGER.warn("Bridge rejected connection: {}", code);
+					running = false;
+					sink.onConnectionRejected(code);
+				}
 				default -> {
 					/* ignore unknown types */ }
 			}

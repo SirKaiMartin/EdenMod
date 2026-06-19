@@ -1,77 +1,119 @@
 package tel.eden.mod.gui;
 
-import tel.eden.mod.EdenModClient;
+import java.util.List;
+import java.util.Optional;
+
+import me.shedaniel.clothconfig2.api.AbstractConfigListEntry;
+import me.shedaniel.clothconfig2.api.ConfigBuilder;
+import me.shedaniel.clothconfig2.api.ConfigCategory;
+import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
+import tel.eden.mod.EdenModClient;
+import tel.eden.mod.config.BridgeConfig;
 
-/** Minimal settings screen: link button, bridge toggle, presence toggle, status. */
-public final class BridgeConfigScreen extends Screen {
-	private static final int WIDTH = 220;
-	private static final int HEIGHT = 20;
+/** Factory for the bridge config screen, built on Cloth Config. */
+public final class BridgeConfigScreen {
 
-	private final Screen parent;
-	private final EdenModClient mod;
-	private String status = "";
-
-	public BridgeConfigScreen(Screen parent, EdenModClient mod) {
-		super(Component.literal("EdenMod"));
-		this.parent = parent;
-		this.mod = mod;
+	private BridgeConfigScreen() {
 	}
 
-	@Override
-	protected void init() {
-		int centerX = this.width / 2 - WIDTH / 2;
-		int y = this.height / 4;
+	public static Screen create(Screen parent, EdenModClient mod) {
+		BridgeConfig config = mod.config();
+		ConfigBuilder builder = ConfigBuilder.create().setParentScreen(parent).setTitle(Component.literal("EdenMod")).setSavingRunnable(config::save);
 
-		addRenderableWidget(Button.builder(Component.literal("Link account"), b -> onLink()).bounds(centerX, y + 14, WIDTH, HEIGHT).build());
+		ConfigEntryBuilder eb = builder.entryBuilder();
+		ConfigCategory cat = builder.getOrCreateCategory(Component.literal("Bridge Settings"));
 
-		addRenderableWidget(Button.builder(Component.literal(enabledLabel()), this::toggleEnabled).bounds(centerX, y + 42, WIDTH, HEIGHT).build());
+		cat.addEntry(eb.startTextDescription(linkStatusText(config)).build());
+		cat.addEntry(new LinkButtonEntry(parent, mod));
 
-		addRenderableWidget(Button.builder(Component.literal(presenceLabel()), this::togglePresence).bounds(centerX, y + 66, WIDTH, HEIGHT).build());
+		cat.addEntry(eb.startBooleanToggle(Component.literal("Bridge"), config.enabled).setDefaultValue(true).setSaveConsumer(v -> config.enabled = v).setYesNoTextSupplier(v -> Component.literal(v ? "Enabled" : "Disabled")).build());
 
-		addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, b -> onClose()).bounds(centerX, y + 98, WIDTH, HEIGHT).build());
+		cat.addEntry(eb.startBooleanToggle(Component.literal("My login/logout messages"), config.announceSelfPresence).setDefaultValue(true).setSaveConsumer(v -> config.announceSelfPresence = v).setYesNoTextSupplier(v -> Component.literal(v ? "On" : "Off")).build());
+
+		cat.addEntry(eb.startBooleanToggle(Component.literal("Party feed"), config.partyAnnounce).setDefaultValue(true).setSaveConsumer(v -> config.partyAnnounce = v).setYesNoTextSupplier(v -> Component.literal(v ? "On" : "Off")).build());
+
+		return builder.build();
 	}
 
-	private String enabledLabel() {
-		return "Bridge: " + (mod.config().enabled ? "Enabled" : "Disabled");
-	}
-
-	private void toggleEnabled(Button button) {
-		mod.config().enabled = !mod.config().enabled;
-		mod.config().save();
-		button.setMessage(Component.literal(enabledLabel()));
-	}
-
-	private String presenceLabel() {
-		return "My login/logout messages: " + (mod.config().announceSelfPresence ? "On" : "Off");
-	}
-
-	private void togglePresence(Button button) {
-		mod.config().announceSelfPresence = !mod.config().announceSelfPresence;
-		mod.config().save();
-		button.setMessage(Component.literal(presenceLabel()));
-	}
-
-	private void onLink() {
-		status = "Opening browser… complete the link there.";
-		mod.startLinkFlow(() -> status = mod.config().hasValidJwt() ? "Linked!" : "Not linked.");
-	}
-
-	@Override
-	public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-		super.render(guiGraphics, mouseX, mouseY, partialTick);
-		guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 4 - 16, 0xFFFFFF);
-		if (!status.isEmpty()) {
-			guiGraphics.drawCenteredString(this.font, Component.literal(status), this.width / 2, this.height / 4 + 130, 0xAAAAAA);
+	private static Component linkStatusText(BridgeConfig config) {
+		if (config.jwt.isEmpty()) {
+			return Component.literal("Not linked").withStyle(s -> s.withColor(0xAAAAAA));
 		}
+		if (!config.hasValidJwt()) {
+			return Component.literal("Token expired — re-link").withStyle(s -> s.withColor(0xFF5555));
+		}
+		String name = config.linkedUsername;
+		return Component.literal(name.isEmpty() ? "Linked" : "Linked as " + name).withStyle(s -> s.withColor(0x55FF55));
 	}
 
-	@Override
-	public void onClose() {
-		this.minecraft.setScreen(parent);
+	/** A single row that renders a full-width "Link account" button. */
+	private static final class LinkButtonEntry extends AbstractConfigListEntry<Void> {
+
+		private final Screen parent;
+		private final EdenModClient mod;
+		private Button linkBtn;
+
+		LinkButtonEntry(Screen parent, EdenModClient mod) {
+			super(Component.literal("Link account"), false);
+			this.parent = parent;
+			this.mod = mod;
+		}
+
+		@Override
+		public Void getValue() {
+			return null;
+		}
+
+		@Override
+		public Optional<Void> getDefaultValue() {
+			return Optional.empty();
+		}
+
+		@Override
+		public void save() {
+		}
+
+		@Override
+		public int getItemHeight() {
+			return 30;
+		}
+
+		@Override
+		public List<? extends GuiEventListener> children() {
+			return linkBtn == null ? List.of() : List.of(linkBtn);
+		}
+
+		@Override
+		public List<? extends NarratableEntry> narratables() {
+			return linkBtn == null ? List.of() : List.of(linkBtn);
+		}
+
+		@Override
+		public void render(GuiGraphics g, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float delta) {
+			if (linkBtn == null) {
+				linkBtn = Button.builder(Component.literal("Link account"), b -> onLink()).bounds(x, y, entryWidth, 20).build();
+			} else {
+				linkBtn.setX(x);
+				linkBtn.setY(y);
+				linkBtn.setWidth(entryWidth);
+			}
+			linkBtn.render(g, mouseX, mouseY, delta);
+		}
+
+		private void onLink() {
+			Minecraft mc = Minecraft.getInstance();
+			if (linkBtn != null) {
+				linkBtn.setMessage(Component.literal("Opening browser…"));
+				linkBtn.active = false;
+			}
+			mod.startLinkFlow(() -> mc.setScreen(BridgeConfigScreen.create(parent, mod)));
+		}
 	}
 }

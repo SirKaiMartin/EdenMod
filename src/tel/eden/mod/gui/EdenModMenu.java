@@ -8,6 +8,6 @@ import com.terraformersmc.modmenu.api.ModMenuApi;
 public final class EdenModMenu implements ModMenuApi {
 	@Override
 	public ConfigScreenFactory<?> getModConfigScreenFactory() {
-		return parent -> new BridgeConfigScreen(parent, EdenModClient.instance());
+		return parent -> BridgeConfigScreen.create(parent, EdenModClient.instance());
 	}
 }
