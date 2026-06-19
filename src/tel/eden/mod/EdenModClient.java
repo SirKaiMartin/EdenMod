@@ -664,7 +664,13 @@ public final class EdenModClient implements ClientModInitializer {
 			loginPending = false;
 			BridgeWebSocketClient current = socket;
 			if (current != null) {
-				current.sendLogin();
+				// Only broadcast our own login when the player hasn't opted out; the
+				// backend pairs the logout to this, so skipping it keeps both quiet.
+				// Presence is always sent — it drives the online/dormant state, not a
+				// chat notice.
+				if (config.announceSelfPresence) {
+					current.sendLogin();
+				}
 				current.sendPresence(inGameWorld); // send whatever state we already detected
 			}
 		}

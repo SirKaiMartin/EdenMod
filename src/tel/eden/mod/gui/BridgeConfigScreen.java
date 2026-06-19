@@ -3,19 +3,17 @@ package tel.eden.mod.gui;
 import tel.eden.mod.EdenModClient;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
-/** Minimal settings screen: backend URL, link button, enable toggle, status. */
+/** Minimal settings screen: link button, bridge toggle, presence toggle, status. */
 public final class BridgeConfigScreen extends Screen {
 	private static final int WIDTH = 220;
 	private static final int HEIGHT = 20;
 
 	private final Screen parent;
 	private final EdenModClient mod;
-	private EditBox urlBox;
 	private String status = "";
 
 	public BridgeConfigScreen(Screen parent, EdenModClient mod) {
@@ -29,17 +27,13 @@ public final class BridgeConfigScreen extends Screen {
 		int centerX = this.width / 2 - WIDTH / 2;
 		int y = this.height / 4;
 
-		this.urlBox = new EditBox(this.font, centerX, y + 14, WIDTH, HEIGHT, Component.literal("Backend URL"));
-		this.urlBox.setMaxLength(256);
-		this.urlBox.setHint(Component.literal("https://eden.example.com"));
-		this.urlBox.setValue(mod.config().backendBaseUrl);
-		addRenderableWidget(this.urlBox);
+		addRenderableWidget(Button.builder(Component.literal("Link account"), b -> onLink()).bounds(centerX, y + 14, WIDTH, HEIGHT).build());
 
-		addRenderableWidget(Button.builder(Component.literal("Link account"), b -> onLink()).bounds(centerX, y + 44, WIDTH, HEIGHT).build());
+		addRenderableWidget(Button.builder(Component.literal(enabledLabel()), this::toggleEnabled).bounds(centerX, y + 42, WIDTH, HEIGHT).build());
 
-		addRenderableWidget(Button.builder(Component.literal(enabledLabel()), b -> toggleEnabled(b)).bounds(centerX, y + 68, WIDTH, HEIGHT).build());
+		addRenderableWidget(Button.builder(Component.literal(presenceLabel()), this::togglePresence).bounds(centerX, y + 66, WIDTH, HEIGHT).build());
 
-		addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, b -> onClose()).bounds(centerX, y + 100, WIDTH, HEIGHT).build());
+		addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, b -> onClose()).bounds(centerX, y + 98, WIDTH, HEIGHT).build());
 	}
 
 	private String enabledLabel() {
@@ -52,19 +46,19 @@ public final class BridgeConfigScreen extends Screen {
 		button.setMessage(Component.literal(enabledLabel()));
 	}
 
-	private void onLink() {
-		saveUrl();
-		if (mod.config().backendBaseUrl.isBlank()) {
-			status = "Set the backend URL first.";
-			return;
-		}
-		status = "Opening browser… complete the link there.";
-		mod.startLinkFlow(() -> status = mod.config().hasValidJwt() ? "Linked!" : "Not linked.");
+	private String presenceLabel() {
+		return "My login/logout messages: " + (mod.config().announceSelfPresence ? "On" : "Off");
 	}
 
-	private void saveUrl() {
-		mod.config().backendBaseUrl = this.urlBox.getValue().strip();
+	private void togglePresence(Button button) {
+		mod.config().announceSelfPresence = !mod.config().announceSelfPresence;
 		mod.config().save();
+		button.setMessage(Component.literal(presenceLabel()));
+	}
+
+	private void onLink() {
+		status = "Opening browser… complete the link there.";
+		mod.startLinkFlow(() -> status = mod.config().hasValidJwt() ? "Linked!" : "Not linked.");
 	}
 
 	@Override
@@ -78,7 +72,6 @@ public final class BridgeConfigScreen extends Screen {
 
 	@Override
 	public void onClose() {
-		saveUrl();
 		this.minecraft.setScreen(parent);
 	}
 }

@@ -25,15 +25,14 @@ public final class BridgeConfig {
 	private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("edenmod.json");
 
 	/**
-	 * Default backend URL baked into the build, so a fresh install (or a cleared
-	 * config) connects without anyone typing it in-game. Update this to the
-	 * permanent bridge domain once the named tunnel is set up.
+	 * The permanent EdenBot backend URL, baked into the build. It is hard-coded (not
+	 * user-editable) since the bridge lives at a fixed domain; the field below is
+	 * always reset to this on load so old configs that stored a dev-tunnel URL are
+	 * transparently migrated.
 	 */
 	public static final String DEFAULT_BACKEND_URL = "https://bridge.eden.tel/";
 
-	/**
-	 * Public HTTPS base URL of the EdenBot backend (e.g. https://eden.example.com).
-	 */
+	/** Public HTTPS base URL of the EdenBot backend (always {@link #DEFAULT_BACKEND_URL}). */
 	public String backendBaseUrl = DEFAULT_BACKEND_URL;
 
 	/** Backend-signed JWT obtained from the link flow; empty until linked. */
@@ -44,6 +43,14 @@ public final class BridgeConfig {
 
 	/** Whether the bridge should connect while on Wynncraft. */
 	public boolean enabled = true;
+
+	/**
+	 * Whether your own login/logout is announced to the guild bridge (both in-game
+	 * and in the Discord bridge chat). On by default; turn it off to keep your own
+	 * comings and goings quiet. Other members' presence notices are unaffected, and
+	 * you still appear in {@code /eden online} either way.
+	 */
+	public boolean announceSelfPresence = true;
 
 	/**
 	 * Whether open/full raid parties are auto-announced in chat with a clickable
@@ -66,9 +73,9 @@ public final class BridgeConfig {
 				String json = Files.readString(PATH, StandardCharsets.UTF_8);
 				BridgeConfig config = GSON.fromJson(json, BridgeConfig.class);
 				if (config != null) {
-					if (config.backendBaseUrl == null || config.backendBaseUrl.isBlank()) {
-						config.backendBaseUrl = DEFAULT_BACKEND_URL;
-					}
+					// The backend URL is permanent and hard-coded: always use it,
+					// ignoring any value an older config may have persisted.
+					config.backendBaseUrl = DEFAULT_BACKEND_URL;
 					return config;
 				}
 			} catch (IOException | RuntimeException e) {

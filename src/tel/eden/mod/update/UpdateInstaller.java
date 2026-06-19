@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Locale;
@@ -19,10 +20,15 @@ import org.slf4j.LoggerFactory;
  *
  * <p>The new jar is downloaded to a staging folder (<em>never</em> the mods folder,
  * so it can't be loaded a second time and cause a duplicate-mod crash). A JVM
- * shutdown hook then launches a small detached OS script that deletes the old jar
- * and moves the new one into the mods folder. On Windows the old jar is file-locked
- * while the game runs, so the script retries until the game has fully exited; on
- * Unix the swap applies immediately and simply takes effect on the next launch.
+ * shutdown hook then launches {@link UpdateApplier} as a small detached JVM (via
+ * {@code javaw}/{@code java}, so no console window appears) that deletes the old jar
+ * and copies the new one into the mods folder. On Windows the old jar is file-locked
+ * while the game runs, so the helper retries until the game has fully exited; on Unix
+ * the swap applies immediately and simply takes effect on the next launch.
+ *
+ * <p>The applier runs from a copy of the <em>current</em> jar (not the downloaded
+ * one): a release older than this self-updater wouldn't contain {@link UpdateApplier},
+ * and the old jar can't be its own classpath because it must stay deletable.
  *
  * <p>Failure is non-destructive: the staged jar lives outside the mods folder, and
  * the old jar is only removed once the swap actually runs, so a failed update never
@@ -54,13 +60,19 @@ public final class UpdateInstaller {
 		try {
 			Path stageDir = FabricLoader.getInstance().getGameDir().resolve("edenmod-update");
 			Files.createDirectories(stageDir);
+			sweepStaleStaging(stageDir);
 			Path staged = stageDir.resolve("edenmod-" + info.version() + ".jar");
 			download(info.jarUrl(), staged);
 			if (!Files.isRegularFile(staged) || Files.size(staged) <= 0) {
 				return Result.FAILED;
 			}
 			Path newJar = oldJar.getParent().resolve("edenmod-" + info.version() + ".jar");
-			Runtime.getRuntime().addShutdownHook(new Thread(() -> spawnSwapper(oldJar, staged, newJar, stageDir), "edenmod-apply"));
+			// The swap helper runs from a copy of the current jar, which is guaranteed
+			// to contain UpdateApplier and is neither the (deletable) old jar nor the
+			// staged jar. It is left behind and swept on the next launch.
+			Path helper = stageDir.resolve("edenmod-helper.jar");
+			Files.copy(oldJar, helper, StandardCopyOption.REPLACE_EXISTING);
+			Runtime.getRuntime().addShutdownHook(new Thread(() -> spawnSwapper(oldJar, staged, newJar, helper), "edenmod-apply"));
 			return Result.SCHEDULED;
 		} catch (IOException | RuntimeException e) {
 			LOGGER.warn("Update download/stage failed", e);
@@ -89,22 +101,52 @@ public final class UpdateInstaller {
 		}
 	}
 
-	/** Write and launch the detached swap script (runs after the JVM has exited). */
-	private void spawnSwapper(Path oldJar, Path staged, Path newJar, Path stageDir) {
+	/** Launch the detached {@link UpdateApplier} JVM (runs on after this JVM exits). */
+	private void spawnSwapper(Path oldJar, Path staged, Path newJar, Path helper) {
 		try {
-			boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-			if (windows) {
-				Path bat = stageDir.resolve("apply-update.bat");
-				Files.writeString(bat, "" + "@echo off\r\n" + ":retry\r\n" + "del /f /q \"" + oldJar + "\" >nul 2>&1\r\n" + "if exist \"" + oldJar + "\" (\r\n" + "  ping -n 2 127.0.0.1 >nul\r\n" + "  goto retry\r\n" + ")\r\n" + "move /y \"" + staged + "\" \"" + newJar + "\" >nul 2>&1\r\n" + "del /f /q \"%~f0\" >nul 2>&1\r\n");
-				new ProcessBuilder("cmd", "/c", "start", "", "/min", bat.toString()).start();
-			} else {
-				Path sh = stageDir.resolve("apply-update.sh");
-				Files.writeString(sh, "" + "#!/bin/sh\n" + "while [ -e \"" + oldJar + "\" ]; do\n" + "  rm -f \"" + oldJar + "\" 2>/dev/null\n" + "  [ -e \"" + oldJar + "\" ] && sleep 1\n" + "done\n" + "mv -f \"" + staged + "\" \"" + newJar + "\"\n" + "rm -f -- \"$0\"\n");
-				sh.toFile().setExecutable(true);
-				new ProcessBuilder("sh", sh.toString()).start();
-			}
+			ProcessBuilder pb = new ProcessBuilder(javaExecutable(), "-cp", helper.toString(), "tel.eden.mod.update.UpdateApplier", oldJar.toString(), staged.toString(), newJar.toString());
+			// No inherited console (javaw already has none on Windows); discard streams
+			// so the detached process never blocks on a full pipe.
+			pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+			pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+			pb.start();
 		} catch (IOException | RuntimeException e) {
-			LOGGER.warn("Failed to launch the update swap script", e);
+			LOGGER.warn("Failed to launch the update applier", e);
+		}
+	}
+
+	/**
+	 * The JVM launcher from the running JRE: {@code javaw} on Windows (so the swap
+	 * pops up no console window), {@code java} elsewhere. Falls back to the bare name
+	 * on the PATH if the expected binary isn't found under {@code java.home}.
+	 */
+	private static String javaExecutable() {
+		Path bin = Path.of(System.getProperty("java.home", ""), "bin");
+		boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+		if (windows) {
+			Path javaw = bin.resolve("javaw.exe");
+			if (Files.isRegularFile(javaw)) {
+				return javaw.toString();
+			}
+			Path java = bin.resolve("java.exe");
+			return Files.isRegularFile(java) ? java.toString() : "javaw";
+		}
+		Path java = bin.resolve("java");
+		return Files.isRegularFile(java) ? java.toString() : "java";
+	}
+
+	/** Best-effort removal of jars staged by an earlier (already-applied) update. */
+	private static void sweepStaleStaging(Path stageDir) {
+		try (java.util.stream.Stream<Path> files = Files.list(stageDir)) {
+			files.filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar")).forEach(p -> {
+				try {
+					Files.deleteIfExists(p);
+				} catch (IOException e) {
+					// Possibly still locked by an in-flight applier; leave it.
+				}
+			});
+		} catch (IOException e) {
+			LOGGER.debug("Could not sweep stale update staging", e);
 		}
 	}
 }
