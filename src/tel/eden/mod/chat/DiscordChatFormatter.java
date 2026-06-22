@@ -165,6 +165,16 @@ public final class DiscordChatFormatter {
 		return withGuildPrefix(body);
 	}
 
+	/**
+	 * Build a gold-pill bridge line (Quick Reactions, {@code /eden cf}/{@code diceroll}):
+	 * a gold pill labelled {@code label}, then the {@code content} in gold. Mirrors
+	 * {@link #format} but in gold rather than the green {@code discord} styling.
+	 */
+	public static Component pill(String label, String content) {
+		MutableComponent body = Component.empty().append(Component.literal(pillLabel(label)).withStyle(Style.EMPTY.withFont(PILL_FONT).withColor(ChatFormatting.GOLD))).append(Component.literal(" " + content).withStyle(ChatFormatting.GOLD));
+		return withGuildPrefix(body);
+	}
+
 	/** The "replyTo (excerpt)" segment: name in green, inline quote gray, full quote on hover. */
 	private static MutableComponent replyTarget(String replyTo, String replyExcerpt) {
 		MutableComponent segment = Component.literal(replyTo).withStyle(ChatFormatting.GREEN);

@@ -204,7 +204,13 @@ public final class EdenModClient implements ClientModInitializer {
 			})).then(ClientCommandManager.literal("aspects").then(ClientCommandManager.literal("pending").executes(ctx -> {
 				requestAspectsPending(ctx.getSource());
 				return 1;
-			}))).then(buildPartyCommand()).then(buildAnnihilationCommand()).then(ClientCommandManager.literal("update").executes(ctx -> {
+			}))).then(ClientCommandManager.literal("cf").executes(ctx -> {
+				requestCoinflip(ctx.getSource());
+				return 1;
+			})).then(ClientCommandManager.literal("diceroll").executes(ctx -> {
+				requestDiceroll(ctx.getSource());
+				return 1;
+			})).then(buildPartyCommand()).then(buildAnnihilationCommand()).then(ClientCommandManager.literal("update").executes(ctx -> {
 				updatePrompt(ctx.getSource());
 				return 1;
 			}).then(ClientCommandManager.literal("download").executes(ctx -> {
@@ -343,6 +349,11 @@ public final class EdenModClient implements ClientModInitializer {
 					pendingConnectionCode = code;
 					Minecraft.getInstance().execute(() -> socket = null);
 				}
+
+				@Override
+				public void onPillMessage(String label, String content) {
+					display(() -> DiscordChatFormatter.pill(label, content));
+				}
 			}, this::onBridgeConnected);
 			socketJwt = config.jwt;
 			socket.start();
@@ -469,6 +480,24 @@ public final class EdenModClient implements ClientModInitializer {
 			return;
 		}
 		current.sendOnlineRequest();
+	}
+
+	private void requestCoinflip(FabricClientCommandSource source) {
+		BridgeWebSocketClient current = socket;
+		if (current == null) {
+			source.sendFeedback(notConnected());
+			return;
+		}
+		current.sendCoinflip();
+	}
+
+	private void requestDiceroll(FabricClientCommandSource source) {
+		BridgeWebSocketClient current = socket;
+		if (current == null) {
+			source.sendFeedback(notConnected());
+			return;
+		}
+		current.sendDiceroll();
 	}
 
 	private void requestAspectsPending(FabricClientCommandSource source) {
@@ -626,7 +655,7 @@ public final class EdenModClient implements ClientModInitializer {
 	private record HelpEntry(String command, String description) {
 	}
 
-	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
+	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden cf", "flip a coin"), new HelpEntry("/eden diceroll", "roll a die"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
 
 	/** Print the in-game command list client-side. */
 	private void showHelp(FabricClientCommandSource source) {

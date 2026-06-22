@@ -64,6 +64,12 @@ public final class BridgeWebSocketClient {
 		 * (e.g. {@code "http_401"} for an invalid JWT).
 		 */
 		void onConnectionRejected(String code);
+
+		/**
+		 * A gold-pill bridge line (Quick Reactions, {@code /eden cf}/{@code diceroll}):
+		 * a gold pill labelled {@code label}, then {@code content}.
+		 */
+		void onPillMessage(String label, String content);
 	}
 
 	private final URI uri;
@@ -239,6 +245,16 @@ public final class BridgeWebSocketClient {
 	/** Ask the backend for the list of open raid parties. */
 	public void sendPartyList() {
 		sendType("partyList");
+	}
+
+	/** Ask the backend to flip a coin and announce who flipped it + the result. */
+	public void sendCoinflip() {
+		sendType("coinflip");
+	}
+
+	/** Ask the backend to roll a die and announce who rolled it + the result. */
+	public void sendDiceroll() {
+		sendType("diceroll");
 	}
 
 	/**
@@ -479,6 +495,7 @@ public final class BridgeWebSocketClient {
 				case "partyUpdate" -> sink.onPartyUpdate(get(obj, "event"), get(obj, "actor"), parseParty(obj));
 				case "partyListReply" -> sink.onPartyList(parsePartyList(obj));
 				case "partyFeedback" -> sink.onPartyFeedback(get(obj, "message"));
+				case "pillMessage" -> sink.onPillMessage(get(obj, "label"), get(obj, "content"));
 				case "error" -> {
 					String code = get(obj, "code");
 					LOGGER.warn("Bridge rejected connection: {}", code);
