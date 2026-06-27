@@ -39,7 +39,7 @@ public final class BridgeConfigScreen {
 
 		cat.addEntry(eb.startBooleanToggle(Component.literal("Party feed"), config.partyAnnounce).setDefaultValue(true).setSaveConsumer(v -> config.partyAnnounce = v).setYesNoTextSupplier(v -> Component.literal(v ? "On" : "Off")).build());
 
-		cat.addEntry(eb.startBooleanToggle(Component.literal("Game messages"), config.showGameMessages).setDefaultValue(true).setSaveConsumer(v -> config.showGameMessages = v).setYesNoTextSupplier(v -> Component.literal(v ? "Shown" : "Hidden")).build());
+		cat.addEntry(eb.startEnumSelector(Component.literal("Game Messages"), BridgeConfig.GameDisplayMode.class, config.gameDisplayMode).setDefaultValue(BridgeConfig.GameDisplayMode.ALL).setSaveConsumer(v -> config.gameDisplayMode = v).build());
 
 		return builder.build();
 	}

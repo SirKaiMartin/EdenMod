@@ -58,12 +58,25 @@ public final class BridgeConfig {
 	 */
 	public boolean partyAnnounce = true;
 
-	/**
-	 * Whether the bridge games (coin flip, dice roll, magic 8-ball) are shown in your
-	 * chat. On by default; turn it off to hide those gold game lines locally. Only
-	 * affects what you see in-game — others still see them, and they still post to Discord.
-	 */
-	public boolean showGameMessages = true;
+	public enum GameDisplayMode {
+		ALL("Shown (All)"), NONE("Hidden (All)"), REACTIONS("Show Only Reactions");
+
+		private final String name;
+
+		GameDisplayMode(String name) {
+			this.name = name;
+		}
+
+		@Override
+		public String toString() {
+			return name;
+		}
+	}
+
+	@Deprecated
+	public Boolean showGameMessages = null;
+
+	public GameDisplayMode gameDisplayMode = GameDisplayMode.ALL;
 
 	/** Load the config from disk, or return defaults (and write them) if absent. */
 	public static BridgeConfig load() {
@@ -72,6 +85,10 @@ public final class BridgeConfig {
 				String json = Files.readString(PATH, StandardCharsets.UTF_8);
 				BridgeConfig config = GSON.fromJson(json, BridgeConfig.class);
 				if (config != null) {
+					if (config.showGameMessages != null) {
+						config.gameDisplayMode = config.showGameMessages ? GameDisplayMode.ALL : GameDisplayMode.NONE;
+						config.showGameMessages = null;
+					}
 					return config;
 				}
 			} catch (IOException | RuntimeException e) {

@@ -57,6 +57,9 @@ public final class BridgeWebSocketClient {
 		/** A short result line for a party action the player just took in-game. */
 		void onPartyFeedback(String message);
 
+		/** Feedback on game commands (e.g. cooldown). */
+		void onGameFeedback(String message);
+
 		/**
 		 * The bridge server rejected the connection. {@code code} is either the
 		 * application-level error code from the server ({@code "version_rejected"},
@@ -201,7 +204,7 @@ public final class BridgeWebSocketClient {
 	}
 
 	/** Open a new party in-game for the given label (raid name or Annihilation). */
-	public void sendPartyOpen(String raid, int maxSize, String note) {
+	public void sendPartyOpen(String raid, int maxSize, String note, int filled) {
 		WebSocket current = socket;
 		if (current == null) {
 			return;
@@ -212,6 +215,9 @@ public final class BridgeWebSocketClient {
 		obj.addProperty("size", maxSize);
 		if (note != null && !note.isBlank()) {
 			obj.addProperty("note", note);
+		}
+		if (filled > 0) {
+			obj.addProperty("filled", filled);
 		}
 		current.sendText(obj.toString(), true);
 	}
@@ -255,18 +261,6 @@ public final class BridgeWebSocketClient {
 	/** Ask the backend to roll a die and announce who rolled it + the result. */
 	public void sendDiceroll() {
 		sendType("diceroll");
-	}
-
-	/** Ask the backend for a magic 8-ball answer to {@code question}, announced to everyone. */
-	public void send8ball(String question) {
-		WebSocket current = socket;
-		if (current == null) {
-			return;
-		}
-		JsonObject obj = new JsonObject();
-		obj.addProperty("type", "8ball");
-		obj.addProperty("question", question);
-		current.sendText(obj.toString(), true);
 	}
 
 	/**
@@ -507,6 +501,7 @@ public final class BridgeWebSocketClient {
 				case "partyUpdate" -> sink.onPartyUpdate(get(obj, "event"), get(obj, "actor"), parseParty(obj));
 				case "partyListReply" -> sink.onPartyList(parsePartyList(obj));
 				case "partyFeedback" -> sink.onPartyFeedback(get(obj, "message"));
+				case "gameFeedback" -> sink.onGameFeedback(get(obj, "message"));
 				case "pillMessage" -> sink.onPillMessage(get(obj, "label"), get(obj, "content"));
 				case "error" -> {
 					String code = get(obj, "code");

@@ -213,10 +213,7 @@ public final class EdenModClient implements ClientModInitializer {
 			})).then(ClientCommandManager.literal("diceroll").executes(ctx -> {
 				requestDiceroll(ctx.getSource());
 				return 1;
-			})).then(ClientCommandManager.literal("8ball").then(ClientCommandManager.argument("question", StringArgumentType.greedyString()).executes(ctx -> {
-				request8ball(ctx.getSource(), StringArgumentType.getString(ctx, "question"));
-				return 1;
-			}))).then(buildPartyCommand()).then(buildAnnihilationCommand()).then(ClientCommandManager.literal("update").executes(ctx -> {
+			})).then(buildPartyCommand()).then(buildAnnihilationCommand()).then(ClientCommandManager.literal("update").executes(ctx -> {
 				updatePrompt(ctx.getSource());
 				return 1;
 			}).then(ClientCommandManager.literal("download").executes(ctx -> {
@@ -358,11 +355,18 @@ public final class EdenModClient implements ClientModInitializer {
 
 				@Override
 				public void onPillMessage(String label, String content) {
-					// Games (cf/diceroll/8ball) ride the "eden" pill; let the user hide them.
-					if (GAMES_PILL_LABEL.equals(label) && !config.showGameMessages) {
+					if (GAMES_PILL_LABEL.equals(label) && config.gameDisplayMode != BridgeConfig.GameDisplayMode.ALL) {
+						return;
+					}
+					if ("reactions".equals(label) && config.gameDisplayMode == BridgeConfig.GameDisplayMode.NONE) {
 						return;
 					}
 					display(() -> DiscordChatFormatter.pill(label, content));
+				}
+
+				@Override
+				public void onGameFeedback(String message) {
+					display(() -> DiscordChatFormatter.systemLine(message, net.minecraft.ChatFormatting.GOLD));
 				}
 			}, this::onBridgeConnected);
 			socketJwt = config.jwt;
@@ -510,15 +514,6 @@ public final class EdenModClient implements ClientModInitializer {
 		current.sendDiceroll();
 	}
 
-	private void request8ball(FabricClientCommandSource source, String question) {
-		BridgeWebSocketClient current = socket;
-		if (current == null) {
-			source.sendFeedback(notConnected());
-			return;
-		}
-		current.send8ball(question);
-	}
-
 	private void requestAspectsPending(FabricClientCommandSource source) {
 		BridgeWebSocketClient current = socket;
 		if (current == null) {
@@ -594,7 +589,7 @@ public final class EdenModClient implements ClientModInitializer {
 		String self = playerName();
 		List<String> invites = new ArrayList<>();
 		for (String name : membersArg.trim().split("\\s+")) {
-			if (!name.isEmpty() && (self == null || !name.equalsIgnoreCase(self))) {
+			if (!name.isEmpty() && (self == null || !name.equalsIgnoreCase(self)) && !name.startsWith("*")) {
 				invites.add(name);
 			}
 		}
@@ -619,12 +614,12 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> raidLiteral(String alias, String raid) {
-		return ClientCommandManager.literal(alias).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, "")).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, StringArgumentType.getString(ctx, "note"))));
+		return ClientCommandManager.literal(alias).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 2)).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, StringArgumentType.getString(ctx, "note"), 0)));
 	}
 
 	/** Build {@code /eden anni <size> [note]} — open an Annihilation party of 2-10. */
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildAnnihilationCommand() {
-		return ClientCommandManager.literal("anni").then(ClientCommandManager.argument("size", IntegerArgumentType.integer(2, 10)).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), "")).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note")))));
+		return ClientCommandManager.literal("anni").then(ClientCommandManager.argument("size", IntegerArgumentType.integer(2, 10)).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), 0))));
 	}
 
 	private int partyList(FabricClientCommandSource source) {
@@ -637,13 +632,13 @@ public final class EdenModClient implements ClientModInitializer {
 		return 1;
 	}
 
-	private int partyOpen(FabricClientCommandSource source, String raid, int maxSize, String note) {
+	private int partyOpen(FabricClientCommandSource source, String raid, int maxSize, String note, int filled) {
 		BridgeWebSocketClient current = socket;
 		if (current == null) {
 			source.sendFeedback(notConnected());
 			return 0;
 		}
-		current.sendPartyOpen(raid, maxSize, note);
+		current.sendPartyOpen(raid, maxSize, note, filled);
 		return 1;
 	}
 
@@ -680,7 +675,7 @@ public final class EdenModClient implements ClientModInitializer {
 	private record HelpEntry(String command, String description) {
 	}
 
-	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden cf", "flip a coin"), new HelpEntry("/eden diceroll", "roll a die"), new HelpEntry("/eden 8ball <question>", "ask the magic 8-ball"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
+	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden cf", "flip a coin"), new HelpEntry("/eden diceroll", "roll a die"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
 
 	/** Print the in-game command list client-side. */
 	private void showHelp(FabricClientCommandSource source) {
