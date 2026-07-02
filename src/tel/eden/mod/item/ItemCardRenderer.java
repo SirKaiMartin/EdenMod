@@ -71,18 +71,34 @@ public final class ItemCardRenderer {
 	}
 
 	private static int drawName(Graphics2D g, DecodedItem item, int y) {
-		String label = item.name();
-		if (item.hasOverall()) {
-			label += String.format("  [%.2f%%]", item.overallPercent());
-		}
 		g.setFont(NAME_FONT);
+		if (!item.hasOverall()) {
+			g.setColor(new Color(item.tierColor()));
+			drawCentered(g, item.name(), y);
+			return y + NAME_H - 18;
+		}
+
+		String namePart = item.name();
+		String percentPart = String.format("  [%.2f%%]", item.overallPercent());
+
+		int nameW = g.getFontMetrics().stringWidth(namePart);
+		int percentW = g.getFontMetrics().stringWidth(percentPart);
+		int totalW = nameW + percentW;
+
+		int startX = (WIDTH - totalW) / 2;
+
 		g.setColor(new Color(item.tierColor()));
-		drawCentered(g, label, y);
+		g.drawString(namePart, startX, y);
+
+		g.setColor(rollColor(item.overallPercent()));
+		g.drawString(percentPart, startX + nameW, y);
+
 		return y + NAME_H - 18;
 	}
 
 	private static int drawPill(Graphics2D g, DecodedItem item, int y) {
-		String text = item.tier().isEmpty() ? "Item" : item.tier() + " Item";
+		String typeLabel = item.type().isEmpty() ? "Item" : item.type();
+		String text = item.tier().isEmpty() ? typeLabel : item.tier() + " " + typeLabel;
 		g.setFont(PILL_FONT);
 		int textW = g.getFontMetrics().stringWidth(text);
 		int pillW = textW + 24;
@@ -132,7 +148,8 @@ public final class ItemCardRenderer {
 	private static void drawFooter(Graphics2D g, DecodedItem item, int y) {
 		g.setFont(FOOT_FONT);
 		g.setColor(new Color(item.tierColor()));
-		String text = item.tier().isEmpty() ? "Item" : item.tier() + " Item";
+		String typeLabel = item.type().isEmpty() ? "Item" : item.type();
+		String text = item.tier().isEmpty() ? typeLabel : item.tier() + " " + typeLabel;
 		g.drawString(text, PAD, y);
 	}
 
@@ -142,15 +159,15 @@ public final class ItemCardRenderer {
 	}
 
 	private static Color rollColor(float percent) {
-		if (percent < 30f) {
-			return new Color(0xFF, 0x55, 0x55);
+		if (percent <= 20f) {
+			return new Color(0xFF, 0x55, 0x55); // Red
 		}
-		if (percent < 70f) {
-			return new Color(0xFF, 0xC0, 0x40);
+		if (percent < 80f) {
+			return new Color(0xFF, 0xFF, 0x55); // Yellow
 		}
-		if (percent < 90f) {
-			return new Color(0x55, 0xFF, 0x55);
+		if (percent < 95f) {
+			return new Color(0x55, 0xFF, 0x55); // Green
 		}
-		return new Color(0x55, 0xFF, 0xFF);
+		return new Color(0x55, 0xFF, 0xFF); // Blue (Aqua)
 	}
 }

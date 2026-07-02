@@ -68,7 +68,7 @@ public final class WynntilsItemDecoder {
 
 		Object tier = callOrNull(gearItem, "getGearTier");
 		String tierName = tier == null ? "" : prettyEnum(String.valueOf(call(tier, "getName")));
-		int tierColor = tierColor(tier);
+		int tierColor = resolveRarityColor(tierName, tierColor(tier));
 
 		Object type = callOrNull(gearItem, "getGearType");
 		String typeName = type == null ? "" : prettyEnum(enumName(type));
@@ -91,6 +91,17 @@ public final class WynntilsItemDecoder {
 		if (!(identifications instanceof List<?> list)) {
 			return out;
 		}
+
+		class IdWithOrder {
+			final DecodedItem.Identification id;
+			final int ordinal;
+			IdWithOrder(DecodedItem.Identification id, int ordinal) {
+				this.id = id;
+				this.ordinal = ordinal;
+			}
+		}
+		List<IdWithOrder> orderedList = new ArrayList<>();
+
 		for (Object actual : list) {
 			Object statType = call(actual, "statType");
 			int value = numberOr(call(actual, "value"), 0);
@@ -100,7 +111,27 @@ public final class WynntilsItemDecoder {
 
 			Object possible = possibleByStat.get(statType);
 			float roll = possible == null ? -1f : rollPercent(actual, possible);
-			out.add(new DecodedItem.Identification(statName, valueText, roll, value >= 0));
+			DecodedItem.Identification id = new DecodedItem.Identification(statName, valueText, roll, value >= 0);
+
+			int ordinal = 9999;
+			if (statType instanceof Enum<?> e) {
+				ordinal = e.ordinal();
+			} else {
+				try {
+					Object ord = call(statType, "ordinal");
+					if (ord instanceof Number n) {
+						ordinal = n.intValue();
+					}
+				} catch (Exception ignored) {
+				}
+			}
+			orderedList.add(new IdWithOrder(id, ordinal));
+		}
+
+		orderedList.sort(java.util.Comparator.comparingInt(x -> x.ordinal));
+
+		for (IdWithOrder item : orderedList) {
+			out.add(item.id);
 		}
 		return out;
 	}
@@ -226,5 +257,20 @@ public final class WynntilsItemDecoder {
 
 	private static int numberOr(Object value, int fallback) {
 		return value instanceof Number n ? n.intValue() : fallback;
+	}
+
+	private static int resolveRarityColor(String tierName, int defaultColor) {
+		if (tierName == null) {
+			return defaultColor;
+		}
+		return switch (tierName.toLowerCase(Locale.ROOT).trim()) {
+			case "mythic" -> 0xC80DB1;
+			case "fabled" -> 0xFF5C5C;
+			case "legendary" -> 0x0DFCFC;
+			case "rare" -> 0xFF5CFF;
+			case "unique" -> 0xFCFC48;
+			case "crafted" -> 0x00AAAA;
+			default -> defaultColor;
+		};
 	}
 }
