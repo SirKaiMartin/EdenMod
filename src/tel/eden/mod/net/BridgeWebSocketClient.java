@@ -253,6 +253,27 @@ public final class BridgeWebSocketClient {
 		sendType("partyList");
 	}
 
+	/** Manage an active raid party (note, filled, add, remove). */
+	public void sendPartyManage(String action, String text, int value, String ign) {
+		WebSocket current = socket;
+		if (current == null) {
+			return;
+		}
+		JsonObject obj = new JsonObject();
+		obj.addProperty("type", "partyManage");
+		obj.addProperty("action", action);
+		if (text != null && !text.isEmpty()) {
+			obj.addProperty("text", text);
+		}
+		if (value > 0) {
+			obj.addProperty("value", value);
+		}
+		if (ign != null && !ign.isEmpty()) {
+			obj.addProperty("ign", ign);
+		}
+		current.sendText(obj.toString(), true);
+	}
+
 	/** Ask the backend to flip a coin and announce who flipped it + the result. */
 	public void sendCoinflip() {
 		sendType("coinflip");

@@ -120,7 +120,7 @@ public final class RaidCompletionParser {
 		Set<String> resolved = new LinkedHashSet<>();
 		int searchFrom = 0;
 		for (String name : displayed) {
-			int start = prefix.indexOf(name, searchFrom);
+			int start = findWord(prefix, name, searchFrom);
 			String hover = null;
 			String insertion = null;
 			if (start >= 0) {
@@ -141,6 +141,23 @@ public final class RaidCompletionParser {
 			}
 		}
 		return List.copyOf(new ArrayList<>(resolved));
+	}
+
+	private static int findWord(String text, String word, int searchFrom) {
+		int index = searchFrom;
+		while ((index = text.indexOf(word, index)) >= 0) {
+			boolean startOk = (index == 0) || !isWordChar(text.charAt(index - 1));
+			boolean endOk = (index + word.length() == text.length()) || !isWordChar(text.charAt(index + word.length()));
+			if (startOk && endOk) {
+				return index;
+			}
+			index += 1;
+		}
+		return -1;
+	}
+
+	private static boolean isWordChar(char ch) {
+		return Character.isLetterOrDigit(ch) || ch == '_';
 	}
 
 	/** Whitespace-collapsed character stream up to the " finished " boundary. */

@@ -581,7 +581,17 @@ public final class EdenModClient implements ClientModInitializer {
 		return ClientCommandManager.literal("party").executes(ctx -> partyList(ctx.getSource())).then(ClientCommandManager.literal("list").executes(ctx -> partyList(ctx.getSource()))).then(ClientCommandManager.literal("create").then(raidLiteral("notg", "Nest of the Grootslangs")).then(raidLiteral("nol", "Orphion's Nexus of Light")).then(raidLiteral("tcc", "The Canyon Colossus")).then(raidLiteral("tna", "The Nameless Anomaly")).then(raidLiteral("wtp", "The Wartorn Palace"))).then(ClientCommandManager.literal("join").then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyJoin(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id"))))).then(ClientCommandManager.literal("leave").executes(ctx -> partyLeave(ctx.getSource(), null)).then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyLeave(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id")))))
 					// Driven by the "[Create party]" prompt shown when a party fills: runs
 					// /party create then invites each listed member in-game.
-					.then(ClientCommandManager.literal("makeingame").then(ClientCommandManager.argument("members", StringArgumentType.greedyString()).executes(ctx -> makeInGameParty(ctx.getSource(), StringArgumentType.getString(ctx, "members")))));
+					.then(ClientCommandManager.literal("makeingame").then(ClientCommandManager.argument("members", StringArgumentType.greedyString()).executes(ctx -> makeInGameParty(ctx.getSource(), StringArgumentType.getString(ctx, "members"))))).then(ClientCommandManager.literal("note").executes(ctx -> partyManage(ctx.getSource(), "note", "", 0, "")).then(ClientCommandManager.argument("text", StringArgumentType.greedyString()).executes(ctx -> partyManage(ctx.getSource(), "note", StringArgumentType.getString(ctx, "text"), 0, "")))).then(ClientCommandManager.literal("filled").then(ClientCommandManager.argument("slots", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyManage(ctx.getSource(), "filled", "", IntegerArgumentType.getInteger(ctx, "slots"), "")))).then(ClientCommandManager.literal("add").then(ClientCommandManager.argument("player", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> partyManage(ctx.getSource(), "add", "", 0, StringArgumentType.getString(ctx, "player"))))).then(ClientCommandManager.literal("remove").then(ClientCommandManager.argument("player", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> partyManage(ctx.getSource(), "remove", "", 0, StringArgumentType.getString(ctx, "player")))));
+	}
+
+	private int partyManage(FabricClientCommandSource source, String action, String text, int value, String ign) {
+		BridgeWebSocketClient current = socket;
+		if (current == null) {
+			source.sendFeedback(notConnected());
+			return 0;
+		}
+		current.sendPartyManage(action, text, value, ign);
+		return 1;
 	}
 
 	/** Run {@code /party create} then {@code /party <ign>} for each member except yourself. */
