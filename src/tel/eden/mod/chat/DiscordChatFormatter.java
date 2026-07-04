@@ -210,7 +210,9 @@ public final class DiscordChatFormatter {
 			}
 			String url = matcher.group("url");
 			if (url != null) {
-				out.append(Component.literal(url).withStyle(linkStyle(url)));
+				boolean isImage = url.matches("(?i).*\\.(png|jpe?g|gif|webp)(\\?.*)?$") || url.startsWith("https://media.discordapp.net/attachments/") || url.startsWith("https://cdn.discordapp.com/attachments/");
+				String visibleText = isImage ? "[image]" : url;
+				out.append(Component.literal(visibleText).withStyle(linkStyle(url, isImage)));
 			} else {
 				String shortcode = matcher.group("emote");
 				Component emote = emoteComponent(shortcode);
@@ -238,10 +240,10 @@ public final class DiscordChatFormatter {
 		return Component.literal(glyph).withStyle(style);
 	}
 
-	private static Style linkStyle(String url) {
+	private static Style linkStyle(String url, boolean isImage) {
 		Style base = Style.EMPTY.withColor(ChatFormatting.AQUA).withUnderlined(true);
 		try {
-			boolean isImage = url.matches("(?i).*\\.(png|jpe?g|gif|webp)(\\?.*)?$") || url.startsWith("https://media.discordapp.net/attachments/") || url.startsWith("https://cdn.discordapp.com/attachments/");
+			// We embed [EDEN_IMG] in the hover text so GuiGraphicsMixin can extract the URL for the preview.
 			Component hoverText = isImage ? Component.literal("[EDEN_IMG]" + url) : Component.literal("Open " + url);
 			return base.withClickEvent(new ClickEvent.OpenUrl(URI.create(url))).withHoverEvent(new HoverEvent.ShowText(hoverText));
 		} catch (IllegalArgumentException e) {
