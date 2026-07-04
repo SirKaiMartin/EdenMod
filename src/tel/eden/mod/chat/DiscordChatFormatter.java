@@ -241,7 +241,9 @@ public final class DiscordChatFormatter {
 	private static Style linkStyle(String url) {
 		Style base = Style.EMPTY.withColor(ChatFormatting.AQUA).withUnderlined(true);
 		try {
-			return base.withClickEvent(new ClickEvent.OpenUrl(URI.create(url))).withHoverEvent(new HoverEvent.ShowText(Component.literal("Open " + url)));
+			boolean isImage = url.matches("(?i).*\\.(png|jpe?g|gif|webp)(\\?.*)?$") || url.startsWith("https://media.discordapp.net/attachments/") || url.startsWith("https://cdn.discordapp.com/attachments/");
+			Component hoverText = isImage ? Component.literal("[EDEN_IMG]" + url) : Component.literal("Open " + url);
+			return base.withClickEvent(new ClickEvent.OpenUrl(URI.create(url))).withHoverEvent(new HoverEvent.ShowText(hoverText));
 		} catch (IllegalArgumentException e) {
 			return Style.EMPTY.withColor(ChatFormatting.GREEN);
 		}
