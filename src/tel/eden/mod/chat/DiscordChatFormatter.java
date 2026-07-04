@@ -323,6 +323,7 @@ public final class DiscordChatFormatter {
 
 	private static Component prefix(int[] glyphs) {
 		StringBuilder out = new StringBuilder();
+		out.append('\u200C');
 		for (int glyph : glyphs) {
 			out.appendCodePoint(glyph);
 		}
