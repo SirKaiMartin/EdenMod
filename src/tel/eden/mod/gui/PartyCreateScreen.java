@@ -55,22 +55,23 @@ public final class PartyCreateScreen extends Screen {
 	@Override
 	protected void init() {
 		int centerX = this.width / 2;
+		int startY = (this.height - 250) / 2;
 
 		// Targets Grid
 		// Row 1
-		btnNotg = Button.builder(Component.literal("Grootslangs"), b -> onTargetClick("Nest of the Grootslangs")).bounds(centerX - 155, 30, 150, 20).build();
-		btnNol = Button.builder(Component.literal("Nexus of Light"), b -> onTargetClick("Orphion's Nexus of Light")).bounds(centerX + 5, 30, 150, 20).build();
+		btnNotg = Button.builder(Component.literal("Grootslangs"), b -> onTargetClick("Nest of the Grootslangs")).bounds(centerX - 150, startY + 35, 145, 20).build();
+		btnNol = Button.builder(Component.literal("Nexus of Light"), b -> onTargetClick("Orphion's Nexus of Light")).bounds(centerX + 5, startY + 35, 145, 20).build();
 
 		// Row 2
-		btnTcc = Button.builder(Component.literal("Canyon Colossus"), b -> onTargetClick("The Canyon Colossus")).bounds(centerX - 155, 52, 150, 20).build();
-		btnTna = Button.builder(Component.literal("Nameless Anomaly"), b -> onTargetClick("The Nameless Anomaly")).bounds(centerX + 5, 52, 150, 20).build();
+		btnTcc = Button.builder(Component.literal("Canyon Colossus"), b -> onTargetClick("The Canyon Colossus")).bounds(centerX - 150, startY + 57, 145, 20).build();
+		btnTna = Button.builder(Component.literal("Nameless Anomaly"), b -> onTargetClick("The Nameless Anomaly")).bounds(centerX + 5, startY + 57, 145, 20).build();
 
 		// Row 3
-		btnWtp = Button.builder(Component.literal("Wartorn Palace"), b -> onTargetClick("The Wartorn Palace")).bounds(centerX - 155, 74, 150, 20).build();
-		btnAnnihilation = Button.builder(Component.literal("Annihilation"), b -> onTargetClick("Annihilation")).bounds(centerX + 5, 74, 150, 20).build();
+		btnWtp = Button.builder(Component.literal("Wartorn Palace"), b -> onTargetClick("The Wartorn Palace")).bounds(centerX - 150, startY + 79, 145, 20).build();
+		btnAnnihilation = Button.builder(Component.literal("Annihilation"), b -> onTargetClick("Annihilation")).bounds(centerX + 5, startY + 79, 145, 20).build();
 
 		// Row 4
-		btnOther = Button.builder(Component.literal("Other"), b -> onTargetClick("Other")).bounds(centerX - 155, 96, 150, 20).build();
+		btnOther = Button.builder(Component.literal("Other"), b -> onTargetClick("Other")).bounds(centerX - 150, startY + 101, 145, 20).build();
 
 		this.addRenderableWidget(btnNotg);
 		this.addRenderableWidget(btnNol);
@@ -81,27 +82,27 @@ public final class PartyCreateScreen extends Screen {
 		this.addRenderableWidget(btnOther);
 
 		// Max Party Size Adjusters
-		btnMaxMinus = Button.builder(Component.literal("-"), b -> adjustMaxPartySize(-1)).bounds(centerX + 35, 122, 20, 20).build();
-		btnMaxPlus = Button.builder(Component.literal("+"), b -> adjustMaxPartySize(1)).bounds(centerX + 85, 122, 20, 20).build();
+		btnMaxMinus = Button.builder(Component.literal("-"), b -> adjustMaxPartySize(-1)).bounds(centerX + 35, startY + 128, 20, 20).build();
+		btnMaxPlus = Button.builder(Component.literal("+"), b -> adjustMaxPartySize(1)).bounds(centerX + 85, startY + 128, 20, 20).build();
 
 		this.addRenderableWidget(btnMaxMinus);
 		this.addRenderableWidget(btnMaxPlus);
 
 		// Players in Party Adjusters
-		btnPlayersMinus = Button.builder(Component.literal("-"), b -> adjustPlayersInParty(-1)).bounds(centerX + 35, 144, 20, 20).build();
-		btnPlayersPlus = Button.builder(Component.literal("+"), b -> adjustPlayersInParty(1)).bounds(centerX + 85, 144, 20, 20).build();
+		btnPlayersMinus = Button.builder(Component.literal("-"), b -> adjustPlayersInParty(-1)).bounds(centerX + 35, startY + 150, 20, 20).build();
+		btnPlayersPlus = Button.builder(Component.literal("+"), b -> adjustPlayersInParty(1)).bounds(centerX + 85, startY + 150, 20, 20).build();
 
 		this.addRenderableWidget(btnPlayersMinus);
 		this.addRenderableWidget(btnPlayersPlus);
 
 		// Note Text Field
-		noteField = new EditBox(this.font, centerX - 155, 180, 310, 20, Component.literal("Party Note"));
+		noteField = new EditBox(this.font, centerX - 150, startY + 187, 300, 20, Component.literal("Party Note"));
 		noteField.setMaxLength(100);
 		this.addRenderableWidget(noteField);
 
 		// Action Buttons
-		btnCreate = Button.builder(Component.literal("Create Party"), b -> onCreate()).bounds(centerX - 155, 210, 150, 20).build();
-		Button btnCancel = Button.builder(Component.literal("Cancel"), b -> onClose()).bounds(centerX + 5, 210, 150, 20).build();
+		btnCreate = Button.builder(Component.literal("Create Party"), b -> onCreate()).bounds(centerX - 150, startY + 215, 145, 20).build();
+		Button btnCancel = Button.builder(Component.literal("Cancel"), b -> onClose()).bounds(centerX + 5, startY + 215, 145, 20).build();
 
 		this.addRenderableWidget(btnCreate);
 		this.addRenderableWidget(btnCancel);
@@ -181,30 +182,56 @@ public final class PartyCreateScreen extends Screen {
 
 	@Override
 	public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+		// Draw standard translucent background overlay
 		g.fill(0, 0, this.width, this.height, 0xC0000000);
-		super.render(g, mouseX, mouseY, delta);
-
-		// drawButtonIcon(g, btnNotg, ICON_NOTG);
-		// drawButtonIcon(g, btnNol, ICON_NOL);
-		// drawButtonIcon(g, btnTcc, ICON_TCC);
-		// drawButtonIcon(g, btnTna, ICON_TNA);
-		// drawButtonIcon(g, btnWtp, ICON_WTP);
-		// drawButtonIcon(g, btnAnnihilation, ICON_ANNIHILATION);
-		// drawButtonIcon(g, btnOther, ICON_OTHER);
-
-		g.drawCenteredString(this.font, this.title, this.width / 2, 10, 0xFFFFFF);
 
 		int centerX = this.width / 2;
-		g.drawString(this.font, "Max Party Size:", centerX - 155, 128, 0xA0A0A0);
-		g.drawCenteredString(this.font, String.valueOf(this.maxPartySize), centerX + 70, 128, 0xFFFFFF);
+		int startY = (this.height - 250) / 2;
+		int startX = centerX - 165;
+		int panelWidth = 330;
+		int panelHeight = 250;
 
-		g.drawString(this.font, "Players in Party:", centerX - 155, 150, 0xA0A0A0);
-		g.drawCenteredString(this.font, String.valueOf(this.playersInParty), centerX + 70, 150, 0xFFFFFF);
+		// 1. Draw centered dialog panel (solid dark gray, slightly translucent)
+		g.fill(startX, startY, startX + panelWidth, startY + panelHeight, 0xE0282828);
 
-		g.drawString(this.font, "Party Note:", centerX - 155, 168, 0xA0A0A0);
+		// 2. Draw 3D outer bevel borders
+		g.fill(startX, startY, startX + panelWidth, startY + 1, 0xFF8E8E8E); // Top outer
+		g.fill(startX, startY + panelHeight - 1, startX + panelWidth, startY + panelHeight, 0xFF5C5C5C); // Bottom outer
+		g.fill(startX, startY, startX + 1, startY + panelHeight, 0xFF8E8E8E); // Left outer
+		g.fill(startX + panelWidth - 1, startY, startX + panelWidth, startY + panelHeight, 0xFF5C5C5C); // Right outer
 
+		// 3. Draw 3D inner highlight borders
+		g.fill(startX + 1, startY + 1, startX + panelWidth - 1, startY + 2, 0xFFC6C6C6); // Top inner
+		g.fill(startX + 1, startY + panelHeight - 2, startX + panelWidth - 1, startY + panelHeight - 1, 0xFF3E3E3E); // Bottom inner
+		g.fill(startX + 1, startY + 1, startX + 2, startY + panelHeight - 1, 0xFFC6C6C6); // Left inner
+		g.fill(startX + panelWidth - 2, startY + 1, startX + panelWidth - 1, startY + panelHeight - 1, 0xFF3E3E3E); // Right inner
+
+		super.render(g, mouseX, mouseY, delta);
+
+		// Draw icons next to checkmarks inside buttons
+		drawButtonIcon(g, btnNotg, ICON_NOTG);
+		drawButtonIcon(g, btnNol, ICON_NOL);
+		drawButtonIcon(g, btnTcc, ICON_TCC);
+		drawButtonIcon(g, btnTna, ICON_TNA);
+		drawButtonIcon(g, btnWtp, ICON_WTP);
+		drawButtonIcon(g, btnAnnihilation, ICON_ANNIHILATION);
+		drawButtonIcon(g, btnOther, ICON_OTHER);
+
+		// Draw Screen Title
+		g.drawCenteredString(this.font, this.title, centerX, startY + 12, 0xFFFFFF);
+
+		// Draw Labels & Values
+		g.drawString(this.font, "Max Party Size:", centerX - 150, startY + 134, 0xA0A0A0);
+		g.drawCenteredString(this.font, String.valueOf(this.maxPartySize), centerX + 70, startY + 134, 0xFFFFFF);
+
+		g.drawString(this.font, "Players in Party:", centerX - 150, startY + 156, 0xA0A0A0);
+		g.drawCenteredString(this.font, String.valueOf(this.playersInParty), centerX + 70, startY + 156, 0xFFFFFF);
+
+		g.drawString(this.font, "Party Note:", centerX - 150, startY + 175, 0xA0A0A0);
+
+		// Draw Preview Message
 		if (selectedTargets.isEmpty()) {
-			g.drawCenteredString(this.font, "Please select at least one target!", centerX, 200, 0xFF5555);
+			g.drawCenteredString(this.font, "Please select at least one target!", centerX, startY + 200, 0xFF5555);
 		} else {
 			String preview;
 			if (selectedTargets.contains("Annihilation")) {
@@ -214,7 +241,7 @@ public final class PartyCreateScreen extends Screen {
 			} else {
 				preview = String.join(" / ", selectedTargets) + " (" + playersInParty + "/4)";
 			}
-			g.drawCenteredString(this.font, "Ready: " + preview, centerX, 200, 0x55FF55);
+			g.drawCenteredString(this.font, "Ready: " + preview, centerX, startY + 200, 0x55FF55);
 		}
 	}
 
