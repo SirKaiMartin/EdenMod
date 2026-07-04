@@ -32,7 +32,7 @@ import net.minecraft.resources.Identifier;
 public final class DiscordChatFormatter {
 	private static final FontDescription PILL_FONT = new FontDescription.Resource(Identifier.parse("banner/pill"));
 	private static final FontDescription PREFIX_FONT = new FontDescription.Resource(Identifier.parse("chat/prefix"));
-	private static final Style PREFIX_STYLE = Style.EMPTY.withFont(PREFIX_FONT).withColor(ChatFormatting.AQUA);
+	private static final Style PREFIX_STYLE = Style.EMPTY.withFont(PREFIX_FONT).withColor(ChatFormatting.GREEN);
 
 	// banner/pill font: left cap, lowercase letters from U+E030, fill spacer, right cap.
 	private static final int PILL_LEFT_CAP = 0xE060;
