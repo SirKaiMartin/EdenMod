@@ -31,7 +31,8 @@ public final class PartyManageScreen extends Screen {
 	private Button btnUpdate;
 
 	private Identifier iconTarget;
-	private final java.util.Map<String, java.util.function.Supplier<net.minecraft.world.entity.player.PlayerSkin>> skinCache = new java.util.HashMap<>();
+	private final java.util.Map<String, Identifier> headCache = new java.util.HashMap<>();
+	private final java.util.Set<String> headFetching = new java.util.HashSet<>();
 
 	public PartyManageScreen(Screen parent, EdenModClient mod, PartyInfo party) {
 		super(Component.literal("Manage Guild Party"));
@@ -55,21 +56,21 @@ public final class PartyManageScreen extends Screen {
 		int rightColX = centerX + 10;
 
 		// Filled Slots Adjusters
-		btnPlayersMinus = Button.builder(Component.literal("-"), b -> adjustFilledSlots(-1)).bounds(rightColX + 55, startY + 114, 20, 20).build();
-		btnPlayersPlus = Button.builder(Component.literal("+"), b -> adjustFilledSlots(1)).bounds(rightColX + 105, startY + 114, 20, 20).build();
+		btnPlayersMinus = Button.builder(Component.literal("-"), b -> adjustFilledSlots(-1)).bounds(rightColX + 55, startY + 124, 20, 20).build();
+		btnPlayersPlus = Button.builder(Component.literal("+"), b -> adjustFilledSlots(1)).bounds(rightColX + 105, startY + 124, 20, 20).build();
 		this.addRenderableWidget(btnPlayersMinus);
 		this.addRenderableWidget(btnPlayersPlus);
 
 		// Note Text Field
-		noteField = new EditBox(this.font, rightColX, startY + 160, 160, 20, Component.literal("Party Note"));
+		noteField = new EditBox(this.font, rightColX, startY + 175, 160, 20, Component.literal("Party Note"));
 		noteField.setMaxLength(100);
 		noteField.setValue(party.note());
 		this.addRenderableWidget(noteField);
 
 		// Action Buttons
-		btnUpdate = Button.builder(Component.literal("Update Party"), b -> onUpdate()).bounds(rightColX, startY + 240, 160, 20).build();
-		Button btnDisband = Button.builder(Component.literal("§cDisband Party"), b -> onDisband()).bounds(rightColX, startY + 265, 160, 20).build();
-		Button btnCancel = Button.builder(Component.literal("Cancel"), b -> onClose()).bounds(rightColX, startY + 290, 160, 20).build();
+		btnUpdate = Button.builder(Component.literal("Update Party"), b -> onUpdate()).bounds(rightColX, startY + 245, 160, 20).build();
+		Button btnDisband = Button.builder(Component.literal("§cDisband Party"), b -> onDisband()).bounds(rightColX, startY + 270, 160, 20).build();
+		Button btnCancel = Button.builder(Component.literal("Cancel"), b -> onClose()).bounds(rightColX, startY + 295, 160, 20).build();
 
 		this.addRenderableWidget(btnUpdate);
 		this.addRenderableWidget(btnDisband);
@@ -109,15 +110,27 @@ public final class PartyManageScreen extends Screen {
 	}
 
 	private void adjustFilledSlots(int amount) {
-		int currentSize = party.members().size() - filledSlots;
-		int limit = party.max() - currentSize;
+		int currentFilledInParty = 0;
+		for (String member : party.members()) {
+			if (member.equals("*filled*"))
+				currentFilledInParty++;
+		}
+		int realMembers = party.members().size() - currentFilledInParty;
+		int limit = party.max() - realMembers;
 		filledSlots = Math.max(0, Math.min(limit, filledSlots + amount));
 		updateWidgetStates();
 	}
 
 	private void updateWidgetStates() {
 		btnPlayersMinus.active = filledSlots > 0;
-		btnPlayersPlus.active = (party.members().size() - filledSlots + filledSlots) < party.max();
+
+		int currentFilledInParty = 0;
+		for (String member : party.members()) {
+			if (member.equals("*filled*"))
+				currentFilledInParty++;
+		}
+		int realMembers = party.members().size() - currentFilledInParty;
+		btnPlayersPlus.active = (realMembers + filledSlots) < party.max();
 	}
 
 	@Override
@@ -163,11 +176,20 @@ public final class PartyManageScreen extends Screen {
 				continue;
 
 			// Draw player head
-			var skinSupplier = skinCache.computeIfAbsent(member, m -> {
-				com.mojang.authlib.GameProfile profile = new com.mojang.authlib.GameProfile(java.util.UUID.nameUUIDFromBytes(("OfflinePlayer:" + m).getBytes()), m);
-				return Minecraft.getInstance().getSkinManager().createLookup(profile, false);
-			});
-			PlayerFaceRenderer.draw(g, skinSupplier.get(), startX + 10, yPos - 1, 12);
+			Identifier headId = headCache.get(member);
+			if (headId == null) {
+				g.fill(startX + 10, yPos - 1, startX + 22, yPos + 11, 0xFF444444); // placeholder box
+				if (!headFetching.contains(member)) {
+					headFetching.add(member);
+					java.util.concurrent.CompletableFuture.runAsync(() -> fetchHead(member));
+				}
+			} else {
+				g.pose().pushMatrix();
+				g.pose().translate(startX + 10, yPos - 1);
+				g.pose().scale(12.0f / 12.0f, 12.0f / 12.0f);
+				g.blit(RenderPipelines.GUI_TEXTURED, headId, 0, 0, 0.0f, 0.0f, 12, 12, 12, 12);
+				g.pose().popMatrix();
+			}
 
 			g.drawString(this.font, member, startX + 28, yPos + 1, member.equalsIgnoreCase(party.host()) ? 0xFFFFD700 : 0xFFFFFFFF);
 			yPos += 24;
@@ -183,18 +205,18 @@ public final class PartyManageScreen extends Screen {
 		// RIGHT SIDE: Manage Controls
 		if (iconTarget != null) {
 			g.pose().pushMatrix();
-			g.pose().translate(rightColX + 70, startY + 40);
-			g.pose().scale(20.0f / 64.0f, 20.0f / 64.0f);
+			g.pose().translate(rightColX + 66, startY + 40);
+			g.pose().scale(28.0f / 64.0f, 28.0f / 64.0f);
 			g.blit(RenderPipelines.GUI_TEXTURED, iconTarget, 0, 0, 0.0f, 0.0f, 64, 64, 64, 64);
 			g.pose().popMatrix();
 		}
-		g.drawCenteredString(this.font, party.raid(), rightColX + 80, startY + 65, 0xFF55FF55);
-		g.drawCenteredString(this.font, "Max Size: " + party.max(), rightColX + 80, startY + 80, 0xFFAAAAAA);
+		g.drawCenteredString(this.font, party.raid(), rightColX + 80, startY + 74, 0xFF55FF55);
+		g.drawCenteredString(this.font, "Max Size: " + party.max(), rightColX + 80, startY + 89, 0xFFAAAAAA);
 
-		g.drawString(this.font, "Filled Slots:", rightColX, startY + 120, 0xFFAAAAAA);
-		g.drawCenteredString(this.font, String.valueOf(this.filledSlots), rightColX + 90, startY + 120, 0xFFFFFFFF);
+		g.drawString(this.font, "Filled Slots:", rightColX, startY + 130, 0xFFAAAAAA);
+		g.drawCenteredString(this.font, String.valueOf(this.filledSlots), rightColX + 90, startY + 130, 0xFFFFFFFF);
 
-		g.drawString(this.font, "Party Note:", rightColX, startY + 148, 0xFFAAAAAA);
+		g.drawString(this.font, "Party Note:", rightColX, startY + 162, 0xFFAAAAAA);
 	}
 
 	private void onUpdate() {
@@ -219,7 +241,7 @@ public final class PartyManageScreen extends Screen {
 	private void onDisband() {
 		var ws = mod.socket();
 		if (ws != null) {
-			ws.sendPartyLeave(party.id());
+			ws.sendPartyManage("close", null, 0, null);
 		}
 		onClose();
 	}
@@ -253,5 +275,19 @@ public final class PartyManageScreen extends Screen {
 			e.printStackTrace();
 		}
 		return null;
+	}
+
+	private void fetchHead(String member) {
+		try (java.io.InputStream stream = new java.net.URL("https://minotar.net/helm/" + member + "/12.png").openStream()) {
+			var img = NativeImage.read(stream);
+			Minecraft.getInstance().execute(() -> {
+				Identifier loc = Identifier.parse("edenmod:head/" + member.toLowerCase());
+				var texture = new DynamicTexture(() -> member, img);
+				Minecraft.getInstance().getTextureManager().register(loc, texture);
+				headCache.put(member, loc);
+			});
+		} catch (Exception e) {
+			// Silently fail if head cannot be fetched
+		}
 	}
 }
