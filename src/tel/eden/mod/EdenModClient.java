@@ -652,14 +652,20 @@ public final class EdenModClient implements ClientModInitializer {
 				invites.add(name);
 			}
 		}
+		createInGameParty(invites);
+		source.sendFeedback(PartyFormatter.feedback("Creating your in-game party and inviting " + invites.size() + " player(s)..."));
+		return 1;
+	}
+
+	public void createInGameParty(List<String> invites) {
 		sendServerCommandLater("party create", 0L);
 		long delay = PARTY_COMMAND_DELAY_MS;
 		for (String ign : invites) {
+			if (ign.equals("*filled*") || ign.equalsIgnoreCase(playerName()))
+				continue;
 			sendServerCommandLater("party " + ign, delay);
 			delay += PARTY_COMMAND_DELAY_MS;
 		}
-		source.sendFeedback(PartyFormatter.feedback("Creating your in-game party and inviting " + invites.size() + " player(s)..."));
-		return 1;
 	}
 
 	/** Send one server command after {@code delayMs}, on the client thread. */

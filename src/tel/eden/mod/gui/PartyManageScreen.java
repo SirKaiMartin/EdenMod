@@ -68,10 +68,15 @@ public final class PartyManageScreen extends Screen {
 		this.addRenderableWidget(noteField);
 
 		// Action Buttons
+		Button btnCreateInGame = Button.builder(Component.literal("Create In-game"), b -> {
+			mod.createInGameParty(party.members());
+			onClose();
+		}).bounds(rightColX, startY + 220, 160, 20).build();
 		btnUpdate = Button.builder(Component.literal("Update Party"), b -> onUpdate()).bounds(rightColX, startY + 245, 160, 20).build();
 		Button btnDisband = Button.builder(Component.literal("§cDisband Party"), b -> onDisband()).bounds(rightColX, startY + 270, 160, 20).build();
 		Button btnCancel = Button.builder(Component.literal("Cancel"), b -> onClose()).bounds(rightColX, startY + 295, 160, 20).build();
 
+		this.addRenderableWidget(btnCreateInGame);
 		this.addRenderableWidget(btnUpdate);
 		this.addRenderableWidget(btnDisband);
 		this.addRenderableWidget(btnCancel);
