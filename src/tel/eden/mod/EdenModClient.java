@@ -29,6 +29,8 @@ import tel.eden.mod.gui.BridgeConfigScreen;
 import tel.eden.mod.gui.CommandAliasScreen;
 import tel.eden.mod.gui.CommandKeybindScreen;
 import tel.eden.mod.gui.PartyCreateScreen;
+import tel.eden.mod.gui.PartyListScreen;
+import tel.eden.mod.gui.PartyManageScreen;
 import tel.eden.mod.item.DecodedItem;
 import tel.eden.mod.item.ItemCardRenderer;
 import tel.eden.mod.item.ItemStringDetector;
@@ -224,7 +226,7 @@ public final class EdenModClient implements ClientModInitializer {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> disconnect());
 		ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
-			dispatcher.register(ClientCommandManager.literal("eden").then(ClientCommandManager.literal("config").executes(ctx -> {
+			dispatcher.register(ClientCommandManager.literal("eden").executes(ctx -> openOverviewGui(ctx.getSource())).then(ClientCommandManager.literal("config").executes(ctx -> {
 				Minecraft mc = Minecraft.getInstance();
 				mc.execute(() -> mc.setScreen(BridgeConfigScreen.create(mc.screen, EdenModClient.instance())));
 				return 1;
@@ -620,7 +622,7 @@ public final class EdenModClient implements ClientModInitializer {
 		return Minecraft.getInstance().player != null ? Minecraft.getInstance().player.getGameProfile().name() : null;
 	}
 
-	private int openCreationGui(FabricClientCommandSource source) {
+	private int openOverviewGui(FabricClientCommandSource source) {
 		Minecraft mc = Minecraft.getInstance();
 		mc.execute(this::openMenuGui);
 		return 1;
@@ -629,6 +631,48 @@ public final class EdenModClient implements ClientModInitializer {
 	private void openMenuGui() {
 		Minecraft mc = Minecraft.getInstance();
 		mc.setScreen(new tel.eden.mod.gui.EdenMenuScreen());
+	}
+
+	private int openPartyCreateGui(FabricClientCommandSource source) {
+		return openPartyCreateGui(source, null);
+	}
+
+	private int openPartyCreateGui(FabricClientCommandSource source, String target) {
+		Minecraft mc = Minecraft.getInstance();
+		mc.execute(() -> mc.setScreen(new PartyCreateScreen(mc.screen, this, target)));
+		return 1;
+	}
+
+	private int openPartyListGui(FabricClientCommandSource source) {
+		Minecraft mc = Minecraft.getInstance();
+		mc.execute(() -> mc.setScreen(new PartyListScreen(mc.screen, this)));
+		return 1;
+	}
+
+	private int openPartyManageGui(FabricClientCommandSource source) {
+		Minecraft mc = Minecraft.getInstance();
+		mc.execute(() -> {
+			PartyInfo hostedParty = hostedParty();
+			if (hostedParty != null) {
+				mc.setScreen(new PartyManageScreen(mc.screen, this, hostedParty));
+			} else if (mc.player != null) {
+				mc.player.displayClientMessage(Component.literal("You are not hosting a party!").withStyle(net.minecraft.ChatFormatting.RED), true);
+			}
+		});
+		return 1;
+	}
+
+	private PartyInfo hostedParty() {
+		String ign = playerName();
+		if (ign == null) {
+			return null;
+		}
+		for (PartyInfo party : knownParties()) {
+			if (party.host().equalsIgnoreCase(ign)) {
+				return party;
+			}
+		}
+		return null;
 	}
 
 	private int openCommandAliasGui(FabricClientCommandSource source) {
@@ -656,15 +700,15 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> otherLiteral() {
-		return ClientCommandManager.literal("other").executes(ctx -> partyOpen(ctx.getSource(), "Other", 4, "", 0)).then(ClientCommandManager.argument("size", IntegerArgumentType.integer(2, 10)).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), 0)))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", 4, StringArgumentType.getString(ctx, "note"), 0)));
+		return ClientCommandManager.literal("other").executes(ctx -> openPartyCreateGui(ctx.getSource(), "Other")).then(ClientCommandManager.argument("size", IntegerArgumentType.integer(2, 10)).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), 0)))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", 4, StringArgumentType.getString(ctx, "note"), 0)));
 	}
 
 	/** Build the {@code /eden party ...} subcommand tree (list/create/join/leave). */
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand() {
-		return ClientCommandManager.literal("party").executes(ctx -> partyList(ctx.getSource())).then(ClientCommandManager.literal("list").executes(ctx -> partyList(ctx.getSource()))).then(ClientCommandManager.literal("create").executes(ctx -> openCreationGui(ctx.getSource())).then(raidLiteral("notg", "Nest of the Grootslangs")).then(raidLiteral("nol", "Orphion's Nexus of Light")).then(raidLiteral("tcc", "The Canyon Colossus")).then(raidLiteral("tna", "The Nameless Anomaly")).then(raidLiteral("wtp", "The Wartorn Palace")).then(otherLiteral())).then(ClientCommandManager.literal("join").then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyJoin(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id"))))).then(ClientCommandManager.literal("leave").executes(ctx -> partyLeave(ctx.getSource(), null)).then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyLeave(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id")))))
+		return ClientCommandManager.literal("party").executes(ctx -> openPartyListGui(ctx.getSource())).then(ClientCommandManager.literal("list").executes(ctx -> openPartyListGui(ctx.getSource()))).then(ClientCommandManager.literal("create").executes(ctx -> openPartyCreateGui(ctx.getSource())).then(raidLiteral("notg", "Nest of the Grootslangs")).then(raidLiteral("nol", "Orphion's Nexus of Light")).then(raidLiteral("tcc", "The Canyon Colossus")).then(raidLiteral("tna", "The Nameless Anomaly")).then(raidLiteral("wtp", "The Wartorn Palace")).then(otherLiteral())).then(ClientCommandManager.literal("join").executes(ctx -> openPartyListGui(ctx.getSource())).then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyJoin(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id"))))).then(ClientCommandManager.literal("leave").executes(ctx -> partyLeave(ctx.getSource(), null)).then(ClientCommandManager.argument("id", IntegerArgumentType.integer()).executes(ctx -> partyLeave(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "id")))))
 					// Driven by the "[Create party]" prompt shown when a party fills: runs
 					// /party create then invites each listed member in-game.
-					.then(ClientCommandManager.literal("makeingame").then(ClientCommandManager.argument("members", StringArgumentType.greedyString()).executes(ctx -> makeInGameParty(ctx.getSource(), StringArgumentType.getString(ctx, "members"))))).then(ClientCommandManager.literal("note").executes(ctx -> partyManage(ctx.getSource(), "note", "", 0, "")).then(ClientCommandManager.argument("text", StringArgumentType.greedyString()).executes(ctx -> partyManage(ctx.getSource(), "note", StringArgumentType.getString(ctx, "text"), 0, "")))).then(ClientCommandManager.literal("filled").then(ClientCommandManager.argument("slots", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyManage(ctx.getSource(), "filled", "", IntegerArgumentType.getInteger(ctx, "slots"), "")))).then(ClientCommandManager.literal("add").then(ClientCommandManager.argument("player", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> partyManage(ctx.getSource(), "add", "", 0, StringArgumentType.getString(ctx, "player"))))).then(ClientCommandManager.literal("remove").then(ClientCommandManager.argument("player", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> partyManage(ctx.getSource(), "remove", "", 0, StringArgumentType.getString(ctx, "player")))));
+					.then(ClientCommandManager.literal("makeingame").then(ClientCommandManager.argument("members", StringArgumentType.greedyString()).executes(ctx -> makeInGameParty(ctx.getSource(), StringArgumentType.getString(ctx, "members"))))).then(ClientCommandManager.literal("note").executes(ctx -> openPartyManageGui(ctx.getSource())).then(ClientCommandManager.argument("text", StringArgumentType.greedyString()).executes(ctx -> partyManage(ctx.getSource(), "note", StringArgumentType.getString(ctx, "text"), 0, "")))).then(ClientCommandManager.literal("filled").executes(ctx -> openPartyManageGui(ctx.getSource())).then(ClientCommandManager.argument("slots", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyManage(ctx.getSource(), "filled", "", IntegerArgumentType.getInteger(ctx, "slots"), "")))).then(ClientCommandManager.literal("add").executes(ctx -> openPartyManageGui(ctx.getSource())).then(ClientCommandManager.argument("player", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> partyManage(ctx.getSource(), "add", "", 0, StringArgumentType.getString(ctx, "player"))))).then(ClientCommandManager.literal("remove").executes(ctx -> openPartyManageGui(ctx.getSource())).then(ClientCommandManager.argument("player", StringArgumentType.word()).suggests(this::suggestMembers).executes(ctx -> partyManage(ctx.getSource(), "remove", "", 0, StringArgumentType.getString(ctx, "player")))));
 	}
 
 	private int partyManage(FabricClientCommandSource source, String action, String text, int value, String ign) {
@@ -858,12 +902,12 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> raidLiteral(String alias, String raid) {
-		return ClientCommandManager.literal(alias).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 2)).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, StringArgumentType.getString(ctx, "note"), 0)));
+		return ClientCommandManager.literal(alias).executes(ctx -> openPartyCreateGui(ctx.getSource(), raid)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 2)).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), raid, 4, StringArgumentType.getString(ctx, "note"), 0)));
 	}
 
 	/** Build {@code /eden anni <size> [note]} — open an Annihilation party of 2-10. */
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildAnnihilationCommand() {
-		return ClientCommandManager.literal("anni").then(ClientCommandManager.argument("size", IntegerArgumentType.integer(2, 10)).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), 0))));
+		return ClientCommandManager.literal("anni").executes(ctx -> openPartyCreateGui(ctx.getSource(), "Annihilation")).then(ClientCommandManager.argument("size", IntegerArgumentType.integer(2, 10)).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Annihilation", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), 0))));
 	}
 
 	private int partyList(FabricClientCommandSource source) {

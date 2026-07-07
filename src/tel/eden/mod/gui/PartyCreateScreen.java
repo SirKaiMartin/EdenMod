@@ -20,6 +20,7 @@ public final class PartyCreateScreen extends EdenReferenceScreen {
 
 	private final Screen parent;
 	private final EdenModClient mod;
+	private final String initialTarget;
 
 	private final Set<String> selectedTargets = new LinkedHashSet<>();
 	private int maxPartySize = 4;
@@ -51,9 +52,14 @@ public final class PartyCreateScreen extends EdenReferenceScreen {
 	private EdenPanelLayout layout;
 
 	public PartyCreateScreen(Screen parent, EdenModClient mod) {
+		this(parent, mod, null);
+	}
+
+	public PartyCreateScreen(Screen parent, EdenModClient mod, String initialTarget) {
 		super(Component.literal("Create Guild Party"));
 		this.parent = parent;
 		this.mod = mod;
+		this.initialTarget = initialTarget;
 		this.playersInParty = Math.max(1, Math.min(maxPartySize - 1, getScoreboardPartySize()));
 	}
 
@@ -120,8 +126,27 @@ public final class PartyCreateScreen extends EdenReferenceScreen {
 		iconWtp = registerDynamicIcon("wtp");
 		iconAnnihilation = registerDynamicIcon("annihilation");
 		iconOther = registerDynamicIcon("other");
+		applyInitialTarget();
 
 		updateWidgetStates();
+	}
+
+	private void applyInitialTarget() {
+		if (initialTarget == null || initialTarget.isBlank()) {
+			return;
+		}
+		selectedTargets.clear();
+		if (initialTarget.equals("Annihilation")) {
+			selectedTargets.add("Annihilation");
+			maxPartySize = 10;
+		} else if (initialTarget.equals("Other")) {
+			selectedTargets.add("Other");
+			maxPartySize = 4;
+		} else {
+			selectedTargets.add(initialTarget);
+			maxPartySize = 4;
+		}
+		playersInParty = Math.max(1, Math.min(maxPartySize - 1, playersInParty));
 	}
 
 	private void onTargetClick(String target) {
