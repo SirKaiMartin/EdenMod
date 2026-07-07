@@ -35,6 +35,8 @@ public final class CommandKeybindScreen extends EdenReferenceScreen {
 	private static final int KEYBIND_X = 239;
 	private static final int KEYBIND_WIDTH = 98;
 	private static final int SCROLLBAR_X = 337;
+	private static final Component EDIT_HINT = Component.literal("Double click a cell to edit");
+	private static final long ADD_HINT_MS = 5_000L;
 
 	private final Screen parent;
 	private final EdenModClient mod;
@@ -47,6 +49,7 @@ public final class CommandKeybindScreen extends EdenReferenceScreen {
 	private int scrollOffset;
 	private int selectedIndex = -1;
 	private long lastClickAt;
+	private long showHintUntil;
 	private int lastClickIndex = -1;
 	private Cell lastClickCell = Cell.COMMAND;
 	private Cell editingCell = Cell.NONE;
@@ -91,6 +94,7 @@ public final class CommandKeybindScreen extends EdenReferenceScreen {
 		rows.add(0, new KeybindRow("", ""));
 		selectedIndex = 0;
 		scrollOffset = 0;
+		showHintUntil = System.currentTimeMillis() + ADD_HINT_MS;
 		refreshButtons();
 	}
 
@@ -253,6 +257,7 @@ public final class CommandKeybindScreen extends EdenReferenceScreen {
 		KeybindRow row = rows.get(index);
 		inlineEditor.setMaxLength(256);
 		inlineEditor.setValue(row.command);
+		inlineEditor.moveCursorToStart(false);
 		repositionInlineEditor();
 		inlineEditor.setVisible(true);
 		inlineEditor.setFocused(true);
@@ -355,7 +360,7 @@ public final class CommandKeybindScreen extends EdenReferenceScreen {
 		KeybindRow row = rows.get(selectedIndex);
 		String newValue = inlineEditor.getValue().trim();
 		String oldCommand = row.command;
-		row.command = newValue;
+		row.command = newValue.isEmpty() ? "" : normalizeCommand(newValue);
 
 		if (!newValue.isEmpty() && !row.command.isEmpty() && !row.input.isEmpty() && !persistRows()) {
 			row.command = oldCommand;
@@ -453,6 +458,9 @@ public final class CommandKeybindScreen extends EdenReferenceScreen {
 		g.drawCenteredString(this.font, this.title, layout.centerX(), layout.y(12), 0xFFFFFFFF);
 		g.drawString(this.font, "Command", layout.x(15), layout.y(30), 0xFFA0A0A0);
 		g.drawString(this.font, "Keybind", layout.x(245), layout.y(30), 0xFFA0A0A0);
+		if ((rowAt(scaledMouseX, scaledMouseY) >= 0 || System.currentTimeMillis() <= showHintUntil) && editingCell == Cell.NONE && !capturingKeybind) {
+			g.drawCenteredString(this.font, EDIT_HINT, layout.centerX(), layout.y(236), 0xFFA0A0A0);
+		}
 		popReferencePose(g);
 	}
 
@@ -465,8 +473,12 @@ public final class CommandKeybindScreen extends EdenReferenceScreen {
 	}
 
 	private String normalizeForDisplay(String value) {
+		return normalizeCommand(value);
+	}
+
+	private String normalizeCommand(String value) {
 		String trimmed = value.trim();
-		return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
+		return trimmed.isEmpty() ? "/" : (trimmed.startsWith("/") ? trimmed : "/" + trimmed);
 	}
 
 	private String trimToWidth(String text, int width) {

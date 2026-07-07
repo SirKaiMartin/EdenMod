@@ -51,7 +51,6 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -714,20 +713,20 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	public synchronized List<BridgeConfig.CommandAlias> commandAliases() {
-		return config.commandAliases.stream().map(alias -> new BridgeConfig.CommandAlias(alias.alias, alias.command)).sorted(Comparator.comparing(alias -> alias.alias.toLowerCase(Locale.ROOT))).toList();
+		return config.commandAliases.stream().map(alias -> new BridgeConfig.CommandAlias(alias.alias, alias.command)).toList();
 	}
 
 	public synchronized List<BridgeConfig.CommandKeybind> commandKeybinds() {
-		return config.commandKeybinds.stream().map(keybind -> new BridgeConfig.CommandKeybind(keybind.input, keybind.command)).sorted(Comparator.comparing(keybind -> describeKeybindInput(keybind.input).toLowerCase(Locale.ROOT))).toList();
+		return config.commandKeybinds.stream().map(keybind -> new BridgeConfig.CommandKeybind(keybind.input, keybind.command)).toList();
 	}
 
 	public synchronized boolean saveCommandAlias(String alias, String command) {
 		String normalizedAlias = normalizeAlias(alias);
-		String normalizedCommand = normalizeTargetCommand(command);
+		String normalizedCommand = normalizeStoredCommand(command);
 		if (normalizedAlias == null || normalizedCommand == null) {
 			return false;
 		}
-		String aliasCommandForm = normalizeCommandInput(normalizedAlias);
+		String aliasCommandForm = normalizeStoredCommand(normalizedAlias);
 		if (aliasCommandForm != null && aliasCommandForm.equalsIgnoreCase(normalizedCommand)) {
 			return false;
 		}
@@ -788,14 +787,14 @@ public final class EdenModClient implements ClientModInitializer {
 		List<BridgeConfig.CommandAlias> normalized = new ArrayList<>();
 		for (BridgeConfig.CommandAlias alias : aliases) {
 			String normalizedAlias = normalizeAlias(alias.alias);
-			String normalizedCommand = normalizeTargetCommand(alias.command);
+			String normalizedCommand = normalizeStoredCommand(alias.command);
 			if (normalizedAlias == null && normalizedCommand == null) {
 				continue;
 			}
 			if (normalizedAlias == null || normalizedCommand == null) {
 				return false;
 			}
-			String aliasCommandForm = normalizeCommandInput(normalizedAlias);
+			String aliasCommandForm = normalizeStoredCommand(normalizedAlias);
 			if (aliasCommandForm != null && aliasCommandForm.equalsIgnoreCase(normalizedCommand)) {
 				return false;
 			}
@@ -815,7 +814,7 @@ public final class EdenModClient implements ClientModInitializer {
 		List<BridgeConfig.CommandKeybind> normalized = new ArrayList<>();
 		for (BridgeConfig.CommandKeybind keybind : keybinds) {
 			String normalizedInput = normalizeKeybindInput(keybind.input);
-			String normalizedCommand = normalizeTargetCommand(keybind.command);
+			String normalizedCommand = normalizeStoredCommand(keybind.command);
 			if (normalizedInput == null && normalizedCommand == null) {
 				continue;
 			}
@@ -1034,7 +1033,7 @@ public final class EdenModClient implements ClientModInitializer {
 		trackedCommandKeybinds.clear();
 		for (BridgeConfig.CommandKeybind entry : config.commandKeybinds) {
 			String normalizedInput = normalizeKeybindInput(entry.input);
-			String normalizedCommand = normalizeTargetCommand(entry.command);
+			String normalizedCommand = normalizeCommandInput(entry.command);
 			if (normalizedInput == null || normalizedCommand == null) {
 				continue;
 			}
@@ -1190,6 +1189,11 @@ public final class EdenModClient implements ClientModInitializer {
 		return normalizeCommandInput(command);
 	}
 
+	private static String normalizeStoredCommand(String command) {
+		String normalized = normalizeCommandInput(command);
+		return normalized == null ? null : "/" + normalized;
+	}
+
 	private static String normalizeCommandInput(String command) {
 		if (command == null) {
 			return null;
@@ -1205,8 +1209,8 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	private static String normalizeCommandDisplay(String command) {
-		String normalized = normalizeCommandInput(command);
-		return normalized == null ? "/" : "/" + normalized;
+		String normalized = normalizeStoredCommand(command);
+		return normalized == null ? "/" : normalized;
 	}
 
 	/** List every loaded chat emote with its inline glyph and clickable ``:shortcode:``. */
