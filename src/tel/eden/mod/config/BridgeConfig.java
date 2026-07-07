@@ -87,6 +87,9 @@ public final class BridgeConfig {
 	/** Client-side aliases that rewrite typed server commands before they are sent. */
 	public List<CommandAlias> commandAliases = new ArrayList<>();
 
+	/** Client-side bindings that run commands from keyboard or mouse input. */
+	public List<CommandKeybind> commandKeybinds = new ArrayList<>();
+
 	public static final class CommandAlias {
 		public String alias = "";
 		public String command = "";
@@ -96,6 +99,19 @@ public final class BridgeConfig {
 
 		public CommandAlias(String alias, String command) {
 			this.alias = alias;
+			this.command = command;
+		}
+	}
+
+	public static final class CommandKeybind {
+		public String input = "";
+		public String command = "";
+
+		public CommandKeybind() {
+		}
+
+		public CommandKeybind(String input, String command) {
+			this.input = input;
 			this.command = command;
 		}
 	}
@@ -113,6 +129,9 @@ public final class BridgeConfig {
 					}
 					if (config.commandAliases == null) {
 						config.commandAliases = new ArrayList<>();
+					}
+					if (config.commandKeybinds == null) {
+						config.commandKeybinds = new ArrayList<>();
 					}
 					config.imagePreviewSize = Math.max(1, Math.min(100, config.imagePreviewSize));
 					return config;

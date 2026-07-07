@@ -12,7 +12,7 @@ public class EdenMenuScreen extends EdenReferenceScreen {
 	private static final int BUTTON_WIDTH = 200;
 	private static final int BUTTON_HEIGHT = 20;
 	private static final int BUTTON_SPACING = 24;
-	private static final int BUTTON_COUNT = 5;
+	private static final int BUTTON_COUNT = 6;
 	private static final int LOGO_WIDTH = 128;
 	private static final int LOGO_GAP = 20;
 	private static final int CONTENT_MARGIN = 12;
@@ -68,6 +68,10 @@ public class EdenMenuScreen extends EdenReferenceScreen {
 		this.addRenderableWidget(Button.builder(Component.literal("Command Aliases"), button -> {
 			this.minecraft.setScreen(new CommandAliasScreen(this, EdenModClient.instance()));
 		}).bounds(buttonX, startY + BUTTON_SPACING * 4, BUTTON_WIDTH, BUTTON_HEIGHT).build());
+
+		this.addRenderableWidget(Button.builder(Component.literal("Command Keybinds"), button -> {
+			this.minecraft.setScreen(new CommandKeybindScreen(this, EdenModClient.instance()));
+		}).bounds(buttonX, startY + BUTTON_SPACING * 5, BUTTON_WIDTH, BUTTON_HEIGHT).build());
 	}
 
 	@Override

@@ -1120,6 +1120,9 @@ public final class EdenModClient implements ClientModInitializer {
 			return null;
 		}
 		String lower = normalized.toLowerCase(Locale.ROOT);
+		if (lower.startsWith("key.keyboard.") || lower.startsWith("key.mouse.") || lower.startsWith("scancode.")) {
+			return lower;
+		}
 		if (lower.startsWith("mouse:")) {
 			return normalizeMouseInput(lower.substring("mouse:".length()).trim());
 		}
