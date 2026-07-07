@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,6 +84,22 @@ public final class BridgeConfig {
 	 */
 	public int imagePreviewSize = 40;
 
+	/** Client-side aliases that rewrite typed server commands before they are sent. */
+	public List<CommandAlias> commandAliases = new ArrayList<>();
+
+	public static final class CommandAlias {
+		public String alias = "";
+		public String command = "";
+
+		public CommandAlias() {
+		}
+
+		public CommandAlias(String alias, String command) {
+			this.alias = alias;
+			this.command = command;
+		}
+	}
+
 	/** Load the config from disk, or return defaults (and write them) if absent. */
 	public static BridgeConfig load() {
 		if (Files.isRegularFile(PATH)) {
@@ -92,6 +110,9 @@ public final class BridgeConfig {
 					if (config.showGameMessages != null) {
 						config.gameDisplayMode = config.showGameMessages ? GameDisplayMode.ALL : GameDisplayMode.NONE;
 						config.showGameMessages = null;
+					}
+					if (config.commandAliases == null) {
+						config.commandAliases = new ArrayList<>();
 					}
 					config.imagePreviewSize = Math.max(1, Math.min(100, config.imagePreviewSize));
 					return config;

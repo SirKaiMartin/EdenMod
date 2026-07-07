@@ -26,6 +26,8 @@ import tel.eden.mod.chat.RankChangeParser;
 import tel.eden.mod.chat.ShoutParser;
 import tel.eden.mod.config.BridgeConfig;
 import tel.eden.mod.gui.BridgeConfigScreen;
+import tel.eden.mod.gui.CommandAliasScreen;
+import tel.eden.mod.gui.CommandKeybindScreen;
 import tel.eden.mod.gui.PartyCreateScreen;
 import tel.eden.mod.item.DecodedItem;
 import tel.eden.mod.item.ItemCardRenderer;
@@ -49,9 +51,12 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -126,6 +131,7 @@ public final class EdenModClient implements ClientModInitializer {
 	// members' clients, which is clock-/arrival-skew independent (order, not time).
 	private final OccurrenceSequencer chatSeq = new OccurrenceSequencer(15_000L);
 	private final GuildRewards guildRewards = new GuildRewards();
+	private final List<TrackedCommandKeybind> trackedCommandKeybinds = new ArrayList<>();
 	private KeyMapping openConfigKey;
 	private KeyMapping createPartyKey;
 	private BridgeWebSocketClient socket;
@@ -187,6 +193,7 @@ public final class EdenModClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		instance = this;
 		config = BridgeConfig.load();
+		refreshCommandKeybinds();
 
 		// Report the exact count of each completed /eden gift run to the backend, so the
 		// reward log shows the real total instead of a count inferred from chat.
@@ -237,7 +244,7 @@ public final class EdenModClient implements ClientModInitializer {
 			})).then(ClientCommandManager.literal("emojis").executes(ctx -> {
 				showEmojis(ctx.getSource());
 				return 1;
-			})).then(buildPartyCommand()).then(buildAnnihilationCommand()).then(ClientCommandManager.literal("update").executes(ctx -> {
+			})).then(buildPartyCommand()).then(buildAnnihilationCommand()).then(buildCommandCommand()).then(ClientCommandManager.literal("update").executes(ctx -> {
 				updatePrompt(ctx.getSource());
 				return 1;
 			}).then(ClientCommandManager.literal("download").executes(ctx -> {
@@ -263,6 +270,7 @@ public final class EdenModClient implements ClientModInitializer {
 				display(() -> Component.literal("You must be on Wynncraft to open the Eden menu.").withStyle(net.minecraft.ChatFormatting.RED));
 			}
 		}
+		pollCommandKeybinds(client);
 		if (pendingUpdateNotification && client.player != null) {
 			pendingUpdateNotification = false;
 			UpdateInfo update = pendingUpdate;
@@ -624,6 +632,30 @@ public final class EdenModClient implements ClientModInitializer {
 		mc.setScreen(new tel.eden.mod.gui.EdenMenuScreen());
 	}
 
+	private int openCommandAliasGui(FabricClientCommandSource source) {
+		Minecraft mc = Minecraft.getInstance();
+		mc.execute(() -> mc.setScreen(new CommandAliasScreen(mc.screen, this)));
+		return 1;
+	}
+
+	private int openCommandKeybindGui(FabricClientCommandSource source) {
+		Minecraft mc = Minecraft.getInstance();
+		mc.execute(() -> mc.setScreen(new CommandKeybindScreen(mc.screen, this)));
+		return 1;
+	}
+
+	private LiteralArgumentBuilder<FabricClientCommandSource> buildCommandCommand() {
+		return ClientCommandManager.literal("command").executes(ctx -> showCommandSectionHelp(ctx.getSource())).then(buildCommandAliasCommand()).then(buildCommandKeybindCommand());
+	}
+
+	private LiteralArgumentBuilder<FabricClientCommandSource> buildCommandAliasCommand() {
+		return ClientCommandManager.literal("alias").executes(ctx -> openCommandAliasGui(ctx.getSource())).then(ClientCommandManager.literal("list").executes(ctx -> listCommandAliases(ctx.getSource()))).then(ClientCommandManager.literal("add").then(ClientCommandManager.argument("alias", StringArgumentType.word()).then(ClientCommandManager.argument("command", StringArgumentType.greedyString()).executes(ctx -> upsertCommandAlias(ctx.getSource(), StringArgumentType.getString(ctx, "alias"), StringArgumentType.getString(ctx, "command")))))).then(ClientCommandManager.literal("remove").then(ClientCommandManager.argument("alias", StringArgumentType.word()).suggests(this::suggestCommandAliases).executes(ctx -> removeCommandAlias(ctx.getSource(), StringArgumentType.getString(ctx, "alias"))))).then(ClientCommandManager.literal("clear").executes(ctx -> clearCommandAliases(ctx.getSource())));
+	}
+
+	private LiteralArgumentBuilder<FabricClientCommandSource> buildCommandKeybindCommand() {
+		return ClientCommandManager.literal("keybind").executes(ctx -> openCommandKeybindGui(ctx.getSource())).then(ClientCommandManager.literal("list").executes(ctx -> listCommandKeybinds(ctx.getSource()))).then(ClientCommandManager.literal("remove").then(ClientCommandManager.argument("input", StringArgumentType.word()).suggests(this::suggestCommandKeybindInputs).executes(ctx -> removeCommandKeybind(ctx.getSource(), StringArgumentType.getString(ctx, "input"))))).then(ClientCommandManager.literal("clear").executes(ctx -> clearCommandKeybinds(ctx.getSource())));
+	}
+
 	private LiteralArgumentBuilder<FabricClientCommandSource> otherLiteral() {
 		return ClientCommandManager.literal("other").executes(ctx -> partyOpen(ctx.getSource(), "Other", 4, "", 0)).then(ClientCommandManager.argument("size", IntegerArgumentType.integer(2, 10)).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), "", 0)).then(ClientCommandManager.argument("filled", IntegerArgumentType.integer(0, 8)).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), "", IntegerArgumentType.getInteger(ctx, "filled"))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), IntegerArgumentType.getInteger(ctx, "filled"))))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", IntegerArgumentType.getInteger(ctx, "size"), StringArgumentType.getString(ctx, "note"), 0)))).then(ClientCommandManager.argument("note", StringArgumentType.greedyString()).executes(ctx -> partyOpen(ctx.getSource(), "Other", 4, StringArgumentType.getString(ctx, "note"), 0)));
 	}
@@ -679,6 +711,151 @@ public final class EdenModClient implements ClientModInitializer {
 				connection.sendCommand(command);
 			}
 		}), delayMs, TimeUnit.MILLISECONDS);
+	}
+
+	public synchronized List<BridgeConfig.CommandAlias> commandAliases() {
+		return config.commandAliases.stream().map(alias -> new BridgeConfig.CommandAlias(alias.alias, alias.command)).sorted(Comparator.comparing(alias -> alias.alias.toLowerCase(Locale.ROOT))).toList();
+	}
+
+	public synchronized List<BridgeConfig.CommandKeybind> commandKeybinds() {
+		return config.commandKeybinds.stream().map(keybind -> new BridgeConfig.CommandKeybind(keybind.input, keybind.command)).sorted(Comparator.comparing(keybind -> describeKeybindInput(keybind.input).toLowerCase(Locale.ROOT))).toList();
+	}
+
+	public synchronized boolean saveCommandAlias(String alias, String command) {
+		String normalizedAlias = normalizeAlias(alias);
+		String normalizedCommand = normalizeTargetCommand(command);
+		if (normalizedAlias == null || normalizedCommand == null) {
+			return false;
+		}
+		String aliasCommandForm = normalizeCommandInput(normalizedAlias);
+		if (aliasCommandForm != null && aliasCommandForm.equalsIgnoreCase(normalizedCommand)) {
+			return false;
+		}
+		for (BridgeConfig.CommandAlias entry : config.commandAliases) {
+			if (entry.alias.equalsIgnoreCase(normalizedAlias)) {
+				entry.alias = normalizedAlias;
+				entry.command = normalizedCommand;
+				config.save();
+				return true;
+			}
+		}
+		config.commandAliases.add(new BridgeConfig.CommandAlias(normalizedAlias, normalizedCommand));
+		config.save();
+		return true;
+	}
+
+	public synchronized boolean deleteCommandAlias(String alias) {
+		String normalizedAlias = normalizeAlias(alias);
+		if (normalizedAlias == null) {
+			return false;
+		}
+		boolean removed = config.commandAliases.removeIf(entry -> entry.alias.equalsIgnoreCase(normalizedAlias));
+		if (removed) {
+			config.save();
+		}
+		return removed;
+	}
+
+	public synchronized void clearAllCommandAliases() {
+		if (!config.commandAliases.isEmpty()) {
+			config.commandAliases.clear();
+			config.save();
+		}
+	}
+
+	public synchronized boolean deleteCommandKeybind(String input) {
+		String normalizedInput = normalizeKeybindInput(input);
+		if (normalizedInput == null) {
+			return false;
+		}
+		boolean removed = config.commandKeybinds.removeIf(entry -> entry.input.equalsIgnoreCase(normalizedInput));
+		if (removed) {
+			config.save();
+			refreshCommandKeybinds();
+		}
+		return removed;
+	}
+
+	public synchronized void clearAllCommandKeybinds() {
+		if (!config.commandKeybinds.isEmpty()) {
+			config.commandKeybinds.clear();
+			config.save();
+			refreshCommandKeybinds();
+		}
+	}
+
+	public synchronized boolean replaceCommandAliases(List<BridgeConfig.CommandAlias> aliases) {
+		List<BridgeConfig.CommandAlias> normalized = new ArrayList<>();
+		for (BridgeConfig.CommandAlias alias : aliases) {
+			String normalizedAlias = normalizeAlias(alias.alias);
+			String normalizedCommand = normalizeTargetCommand(alias.command);
+			if (normalizedAlias == null && normalizedCommand == null) {
+				continue;
+			}
+			if (normalizedAlias == null || normalizedCommand == null) {
+				return false;
+			}
+			String aliasCommandForm = normalizeCommandInput(normalizedAlias);
+			if (aliasCommandForm != null && aliasCommandForm.equalsIgnoreCase(normalizedCommand)) {
+				return false;
+			}
+			boolean duplicate = normalized.stream().anyMatch(entry -> entry.alias.equalsIgnoreCase(normalizedAlias));
+			if (duplicate) {
+				return false;
+			}
+			normalized.add(new BridgeConfig.CommandAlias(normalizedAlias, normalizedCommand));
+		}
+		config.commandAliases.clear();
+		config.commandAliases.addAll(normalized);
+		config.save();
+		return true;
+	}
+
+	public synchronized boolean replaceCommandKeybinds(List<BridgeConfig.CommandKeybind> keybinds) {
+		List<BridgeConfig.CommandKeybind> normalized = new ArrayList<>();
+		for (BridgeConfig.CommandKeybind keybind : keybinds) {
+			String normalizedInput = normalizeKeybindInput(keybind.input);
+			String normalizedCommand = normalizeTargetCommand(keybind.command);
+			if (normalizedInput == null && normalizedCommand == null) {
+				continue;
+			}
+			if (normalizedInput == null || normalizedCommand == null) {
+				return false;
+			}
+			boolean duplicate = normalized.stream().anyMatch(entry -> entry.input.equalsIgnoreCase(normalizedInput));
+			if (duplicate) {
+				return false;
+			}
+			normalized.add(new BridgeConfig.CommandKeybind(normalizedInput, normalizedCommand));
+		}
+		config.commandKeybinds.clear();
+		config.commandKeybinds.addAll(normalized);
+		config.save();
+		refreshCommandKeybinds();
+		return true;
+	}
+
+	public synchronized String rewriteOutgoingCommand(String commandLine) {
+		String normalizedInput = normalizeCommandInput(commandLine);
+		if (normalizedInput == null) {
+			return null;
+		}
+		String resolved = normalizedInput;
+		boolean changed = false;
+		Set<String> seen = new HashSet<>();
+		seen.add(normalizedInput.toLowerCase(Locale.ROOT));
+		for (int depth = 0; depth < 16; depth++) {
+			String next = rewriteCommandAliasOnce(resolved);
+			if (next == null || next.equalsIgnoreCase(resolved)) {
+				break;
+			}
+			if (!seen.add(next.toLowerCase(Locale.ROOT))) {
+				break;
+			}
+			resolved = next;
+			changed = true;
+		}
+		return changed ? resolved : null;
 	}
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> raidLiteral(String alias, String raid) {
@@ -740,6 +917,295 @@ public final class EdenModClient implements ClientModInitializer {
 		return Component.literal("Not connected to the Eden bridge.").withStyle(net.minecraft.ChatFormatting.RED);
 	}
 
+	private int showCommandSectionHelp(FabricClientCommandSource source) {
+		source.sendFeedback(Component.literal("Command tools: /eden command alias, /eden command keybind").withStyle(ChatFormatting.GREEN));
+		return 1;
+	}
+
+	private int upsertCommandAlias(FabricClientCommandSource source, String alias, String command) {
+		if (!saveCommandAlias(alias, command)) {
+			source.sendFeedback(Component.literal("Alias and command must both be non-empty, and they cannot be identical.").withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		String normalizedAlias = normalizeAlias(alias);
+		String normalizedCommand = normalizeCommandDisplay(command);
+		source.sendFeedback(Component.literal("Saved command alias ").withStyle(ChatFormatting.GREEN).append(Component.literal(normalizedAlias).withStyle(ChatFormatting.AQUA)).append(Component.literal(" -> ").withStyle(ChatFormatting.GRAY)).append(Component.literal(normalizedCommand).withStyle(ChatFormatting.AQUA)));
+		return 1;
+	}
+
+	private int removeCommandAlias(FabricClientCommandSource source, String alias) {
+		String normalizedAlias = normalizeAlias(alias);
+		if (normalizedAlias == null || !deleteCommandAlias(alias)) {
+			source.sendFeedback(Component.literal("No command alias exists for " + alias + ".").withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		source.sendFeedback(Component.literal("Removed command alias " + normalizedAlias + ".").withStyle(ChatFormatting.GREEN));
+		return 1;
+	}
+
+	private int clearCommandAliases(FabricClientCommandSource source) {
+		if (commandAliases().isEmpty()) {
+			source.sendFeedback(Component.literal("No command aliases are configured.").withStyle(ChatFormatting.YELLOW));
+			return 1;
+		}
+		clearAllCommandAliases();
+		source.sendFeedback(Component.literal("Cleared all command aliases.").withStyle(ChatFormatting.GREEN));
+		return 1;
+	}
+
+	private int listCommandAliases(FabricClientCommandSource source) {
+		List<BridgeConfig.CommandAlias> aliases = commandAliases();
+		if (aliases.isEmpty()) {
+			source.sendFeedback(Component.literal("No command aliases configured. Use /eden command alias to add one.").withStyle(ChatFormatting.YELLOW));
+			return 1;
+		}
+		MutableComponent out = Component.literal("Command aliases:").withStyle(ChatFormatting.GREEN);
+		for (BridgeConfig.CommandAlias entry : aliases) {
+			Style aliasStyle = Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(new ClickEvent.SuggestCommand(entry.alias)).withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to put " + entry.alias + " in your chat box")));
+			Style removeStyle = Style.EMPTY.withColor(ChatFormatting.RED).withUnderlined(true).withClickEvent(new ClickEvent.RunCommand("/eden command alias remove " + entry.alias)).withHoverEvent(new HoverEvent.ShowText(Component.literal("Remove " + entry.alias)));
+			out.append(Component.literal("\n  ")).append(Component.literal(entry.alias).setStyle(aliasStyle)).append(Component.literal(" -> ").withStyle(ChatFormatting.GRAY)).append(Component.literal(normalizeCommandDisplay(entry.command)).withStyle(ChatFormatting.WHITE)).append(Component.literal(" ")).append(Component.literal("[remove]").setStyle(removeStyle));
+		}
+		source.sendFeedback(out);
+		return 1;
+	}
+
+	private CompletableFuture<Suggestions> suggestCommandAliases(CommandContext<FabricClientCommandSource> context, SuggestionsBuilder builder) {
+		String remaining = builder.getRemainingLowerCase();
+		for (BridgeConfig.CommandAlias entry : commandAliases()) {
+			if (entry.alias.toLowerCase(Locale.ROOT).startsWith(remaining)) {
+				builder.suggest(entry.alias);
+			}
+		}
+		return builder.buildFuture();
+	}
+
+	private int removeCommandKeybind(FabricClientCommandSource source, String input) {
+		String normalizedInput = normalizeKeybindInput(input);
+		if (normalizedInput == null || !deleteCommandKeybind(input)) {
+			source.sendFeedback(Component.literal("No command keybind exists for " + input + ".").withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		source.sendFeedback(Component.literal("Removed command keybind ").withStyle(ChatFormatting.GREEN).append(Component.literal(describeKeybindInput(normalizedInput)).withStyle(ChatFormatting.AQUA)).append(Component.literal(".").withStyle(ChatFormatting.GREEN)));
+		return 1;
+	}
+
+	private int clearCommandKeybinds(FabricClientCommandSource source) {
+		if (commandKeybinds().isEmpty()) {
+			source.sendFeedback(Component.literal("No command keybinds are configured.").withStyle(ChatFormatting.YELLOW));
+			return 1;
+		}
+		clearAllCommandKeybinds();
+		source.sendFeedback(Component.literal("Cleared all command keybinds.").withStyle(ChatFormatting.GREEN));
+		return 1;
+	}
+
+	private int listCommandKeybinds(FabricClientCommandSource source) {
+		List<BridgeConfig.CommandKeybind> keybinds = commandKeybinds();
+		if (keybinds.isEmpty()) {
+			source.sendFeedback(Component.literal("No command keybinds configured. Use /eden command keybind to add one.").withStyle(ChatFormatting.YELLOW));
+			return 1;
+		}
+		MutableComponent out = Component.literal("Command keybinds:").withStyle(ChatFormatting.GREEN);
+		for (BridgeConfig.CommandKeybind entry : keybinds) {
+			String displayInput = describeKeybindInput(entry.input);
+			Style removeStyle = Style.EMPTY.withColor(ChatFormatting.RED).withUnderlined(true).withClickEvent(new ClickEvent.RunCommand("/eden command keybind remove " + entry.input)).withHoverEvent(new HoverEvent.ShowText(Component.literal("Remove " + displayInput)));
+			out.append(Component.literal("\n  ")).append(Component.literal(displayInput).withStyle(ChatFormatting.AQUA)).append(Component.literal(" -> ").withStyle(ChatFormatting.GRAY)).append(Component.literal(normalizeCommandDisplay(entry.command)).withStyle(ChatFormatting.WHITE)).append(Component.literal(" ")).append(Component.literal("[remove]").setStyle(removeStyle));
+		}
+		source.sendFeedback(out);
+		return 1;
+	}
+
+	private CompletableFuture<Suggestions> suggestCommandKeybindInputs(CommandContext<FabricClientCommandSource> context, SuggestionsBuilder builder) {
+		String remaining = builder.getRemainingLowerCase();
+		for (BridgeConfig.CommandKeybind entry : commandKeybinds()) {
+			if (entry.input.toLowerCase(Locale.ROOT).startsWith(remaining)) {
+				builder.suggest(entry.input);
+			}
+		}
+		return builder.buildFuture();
+	}
+
+	private static String normalizeAlias(String alias) {
+		String normalized = normalizeCommandInput(alias);
+		return normalized == null ? null : "/" + normalized.toLowerCase(Locale.ROOT);
+	}
+
+	private synchronized void refreshCommandKeybinds() {
+		trackedCommandKeybinds.clear();
+		for (BridgeConfig.CommandKeybind entry : config.commandKeybinds) {
+			String normalizedInput = normalizeKeybindInput(entry.input);
+			String normalizedCommand = normalizeTargetCommand(entry.command);
+			if (normalizedInput == null || normalizedCommand == null) {
+				continue;
+			}
+			InputConstants.Key key = parseInputKey(normalizedInput);
+			if (key == null) {
+				continue;
+			}
+			trackedCommandKeybinds.add(new TrackedCommandKeybind(normalizedInput, normalizedCommand, key));
+		}
+	}
+
+	private void pollCommandKeybinds(Minecraft client) {
+		if (client.player == null || client.getConnection() == null || client.screen != null) {
+			releaseAllCommandKeybinds();
+			return;
+		}
+		var window = client.getWindow();
+		List<TrackedCommandKeybind> pressed = new ArrayList<>();
+		synchronized (this) {
+			for (TrackedCommandKeybind keybind : trackedCommandKeybinds) {
+				boolean down = isInputDown(window, keybind.key());
+				if (down && !keybind.down()) {
+					pressed.add(keybind);
+				}
+				keybind.setDown(down);
+			}
+		}
+		for (TrackedCommandKeybind keybind : pressed) {
+			sendConfiguredCommand(keybind.command());
+		}
+	}
+
+	private synchronized void releaseAllCommandKeybinds() {
+		for (TrackedCommandKeybind keybind : trackedCommandKeybinds) {
+			keybind.setDown(false);
+		}
+	}
+
+	private void sendConfiguredCommand(String commandLine) {
+		Minecraft client = Minecraft.getInstance();
+		var connection = client.getConnection();
+		if (connection == null) {
+			return;
+		}
+		String outgoing = rewriteOutgoingCommand(commandLine);
+		connection.sendCommand(outgoing != null ? outgoing : normalizeTargetCommand(commandLine));
+	}
+
+	private String rewriteCommandAliasOnce(String normalizedInput) {
+		BridgeConfig.CommandAlias best = null;
+		for (BridgeConfig.CommandAlias entry : config.commandAliases) {
+			String alias = normalizeCommandInput(entry.alias);
+			String target = normalizeCommandInput(entry.command);
+			if (alias == null || target == null || alias.equalsIgnoreCase(target)) {
+				continue;
+			}
+			if (normalizedInput.equalsIgnoreCase(alias) || normalizedInput.toLowerCase(Locale.ROOT).startsWith(alias.toLowerCase(Locale.ROOT) + " ")) {
+				if (best == null || alias.length() > best.alias.length()) {
+					best = new BridgeConfig.CommandAlias(alias, target);
+				}
+			}
+		}
+		if (best == null) {
+			return null;
+		}
+		if (normalizedInput.length() == best.alias.length()) {
+			return best.command;
+		}
+		return best.command + normalizedInput.substring(best.alias.length());
+	}
+
+	public static String describeKeybindInput(String input) {
+		InputConstants.Key key = parseInputKey(input);
+		return key == null ? input : key.getDisplayName().getString();
+	}
+
+	public static String normalizeKeybindInput(String input) {
+		if (input == null) {
+			return null;
+		}
+		String normalized = input.trim();
+		if (normalized.isEmpty()) {
+			return null;
+		}
+		String lower = normalized.toLowerCase(Locale.ROOT);
+		if (lower.startsWith("mouse:")) {
+			return normalizeMouseInput(lower.substring("mouse:".length()).trim());
+		}
+		if (lower.startsWith("mouse.")) {
+			return normalizeMouseInput(lower.substring("mouse.".length()).trim());
+		}
+		if (lower.startsWith("keyboard:")) {
+			return normalizeKeyboardInput(lower.substring("keyboard:".length()).trim());
+		}
+		if (lower.startsWith("key:")) {
+			return normalizeKeyboardInput(lower.substring("key:".length()).trim());
+		}
+		if (normalized.length() == 1) {
+			return normalizeKeyboardInput(normalized);
+		}
+		InputConstants.Key key = parseInputKey(normalized);
+		return key == null ? null : key.getName();
+	}
+
+	private static String normalizeKeyboardInput(String token) {
+		if (token.isEmpty()) {
+			return null;
+		}
+		if (token.length() == 1) {
+			char value = Character.toLowerCase(token.charAt(0));
+			if ((value >= 'a' && value <= 'z') || (value >= '0' && value <= '9')) {
+				return parseInputKey("key.keyboard." + value).getName();
+			}
+		}
+		InputConstants.Key key = parseInputKey(token.startsWith("key.keyboard.") ? token : "key.keyboard." + token.toLowerCase(Locale.ROOT));
+		return key == null ? null : key.getName();
+	}
+
+	private static String normalizeMouseInput(String token) {
+		if (token.isEmpty()) {
+			return null;
+		}
+		return switch (token) {
+			case "left", "1" -> InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_LEFT).getName();
+			case "right", "2" -> InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_RIGHT).getName();
+			case "middle", "3" -> InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_MIDDLE).getName();
+			case "4", "button4", "back" -> InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_4).getName();
+			case "5", "button5", "forward" -> InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_5).getName();
+			default -> {
+				InputConstants.Key key = parseInputKey(token.startsWith("key.mouse.") ? token : "key.mouse." + token.toLowerCase(Locale.ROOT));
+				yield key == null ? null : key.getName();
+			}
+		};
+	}
+
+	private static InputConstants.Key parseInputKey(String input) {
+		try {
+			InputConstants.Key key = InputConstants.getKey(input);
+			return key.equals(InputConstants.UNKNOWN) ? null : key;
+		} catch (IllegalArgumentException ex) {
+			return null;
+		}
+	}
+
+	private static boolean isInputDown(com.mojang.blaze3d.platform.Window window, InputConstants.Key key) {
+		return key.getType() == InputConstants.Type.MOUSE ? GLFW.glfwGetMouseButton(window.handle(), key.getValue()) == GLFW.GLFW_PRESS : InputConstants.isKeyDown(window, key.getValue());
+	}
+
+	private static String normalizeTargetCommand(String command) {
+		return normalizeCommandInput(command);
+	}
+
+	private static String normalizeCommandInput(String command) {
+		if (command == null) {
+			return null;
+		}
+		String normalized = command.trim();
+		if (normalized.isEmpty()) {
+			return null;
+		}
+		if (normalized.startsWith("/")) {
+			normalized = normalized.substring(1).trim();
+		}
+		return normalized.isEmpty() ? null : normalized;
+	}
+
+	private static String normalizeCommandDisplay(String command) {
+		String normalized = normalizeCommandInput(command);
+		return normalized == null ? "/" : "/" + normalized;
+	}
+
 	/** List every loaded chat emote with its inline glyph and clickable ``:shortcode:``. */
 	private int showEmojis(FabricClientCommandSource source) {
 		java.util.List<String> codes = EmoteRegistry.shortcodes();
@@ -767,7 +1233,40 @@ public final class EdenModClient implements ClientModInitializer {
 	private record HelpEntry(String command, String description) {
 	}
 
-	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden cf", "flip a coin"), new HelpEntry("/eden diceroll", "roll a die"), new HelpEntry("/eden emojis", "list all chat emojis and their :syntax:"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
+	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden cf", "flip a coin"), new HelpEntry("/eden diceroll", "roll a die"), new HelpEntry("/eden emojis", "list all chat emojis and their :syntax:"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden command alias", "open the command alias editor"), new HelpEntry("/eden command keybind", "open the command keybind editor"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden help", "this help screen"));
+
+	private static final class TrackedCommandKeybind {
+		private final String input;
+		private final String command;
+		private final InputConstants.Key key;
+		private boolean down;
+
+		private TrackedCommandKeybind(String input, String command, InputConstants.Key key) {
+			this.input = input;
+			this.command = command;
+			this.key = key;
+		}
+
+		private String input() {
+			return input;
+		}
+
+		private String command() {
+			return command;
+		}
+
+		private InputConstants.Key key() {
+			return key;
+		}
+
+		private boolean down() {
+			return down;
+		}
+
+		private void setDown(boolean down) {
+			this.down = down;
+		}
+	}
 
 	/** Print the in-game command list client-side. */
 	private void showHelp(FabricClientCommandSource source) {
