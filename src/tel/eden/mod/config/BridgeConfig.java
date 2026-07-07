@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,8 +18,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Holds the backend base URL the mod talks to, the current backend-signed JWT
  * (and its expiry, so we can re-auth before it lapses), and whether the bridge
- * is
- * enabled.
+ * is enabled.
  */
 public final class BridgeConfig {
 	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
@@ -52,9 +53,8 @@ public final class BridgeConfig {
 
 	/**
 	 * Whether open/full raid parties are auto-announced in chat with a clickable
-	 * {@code [JOIN #id]} feed. When false, parties are only
-	 * shown on demand via {@code /eden party list}. Toggle with
-	 * {@code /eden party announce on|off}.
+	 * {@code [JOIN #id]} feed. When false, parties are only shown on demand via
+	 * {@code /eden party list}. Toggle with {@code /eden party announce on|off}.
 	 */
 	public boolean partyAnnounce = true;
 
@@ -80,9 +80,41 @@ public final class BridgeConfig {
 
 	/**
 	 * How much of the screen (as a percentage) an image preview can occupy.
-	 * Range 20–80, default 40.
+	 * Range 1-100, default 40.
 	 */
 	public int imagePreviewSize = 40;
+
+	/** Client-side aliases that rewrite typed server commands before they are sent. */
+	public List<CommandAlias> commandAliases = new ArrayList<>();
+
+	/** Client-side bindings that run commands from keyboard or mouse input. */
+	public List<CommandKeybind> commandKeybinds = new ArrayList<>();
+
+	public static final class CommandAlias {
+		public String alias = "";
+		public String command = "";
+
+		public CommandAlias() {
+		}
+
+		public CommandAlias(String alias, String command) {
+			this.alias = alias;
+			this.command = command;
+		}
+	}
+
+	public static final class CommandKeybind {
+		public String input = "";
+		public String command = "";
+
+		public CommandKeybind() {
+		}
+
+		public CommandKeybind(String input, String command) {
+			this.input = input;
+			this.command = command;
+		}
+	}
 
 	/** Load the config from disk, or return defaults (and write them) if absent. */
 	public static BridgeConfig load() {
@@ -95,6 +127,13 @@ public final class BridgeConfig {
 						config.gameDisplayMode = config.showGameMessages ? GameDisplayMode.ALL : GameDisplayMode.NONE;
 						config.showGameMessages = null;
 					}
+					if (config.commandAliases == null) {
+						config.commandAliases = new ArrayList<>();
+					}
+					if (config.commandKeybinds == null) {
+						config.commandKeybinds = new ArrayList<>();
+					}
+					config.imagePreviewSize = Math.max(1, Math.min(100, config.imagePreviewSize));
 					return config;
 				}
 			} catch (IOException | RuntimeException e) {
