@@ -4,7 +4,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -13,7 +12,7 @@ import tel.eden.mod.config.BridgeConfig;
 import tel.eden.mod.update.UpdateChecker;
 import tel.eden.mod.update.UpdateInfo;
 
-public final class BridgeConfigScreen extends EdenReferenceScreen {
+public final class BridgeConfigScreen extends Screen {
 	private static final Identifier LOGO_TEXTURE = Identifier.parse("edenmod:icon.png");
 	private static final int LOGO_W = 722;
 	private static final int LOGO_H = 693;
@@ -47,8 +46,7 @@ public final class BridgeConfigScreen extends EdenReferenceScreen {
 	@Override
 	protected void init() {
 		super.init();
-		updateReferenceSpace();
-		layout = EdenPanelLayout.centered(virtualWidth, virtualHeight, BASE_PANEL_WIDTH, BASE_PANEL_HEIGHT);
+		layout = EdenPanelLayout.centered(this.width, this.height, BASE_PANEL_WIDTH, BASE_PANEL_HEIGHT);
 
 		linkButton = this.addRenderableWidget(Button.builder(Component.literal("Link account"), button -> startLinkFlow()).bounds(layout.x(15), layout.y(88), layout.w(390), layout.h(20)).build());
 
@@ -144,14 +142,10 @@ public final class BridgeConfigScreen extends EdenReferenceScreen {
 
 	@Override
 	public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
-		int scaledMouseX = scaledMouseX(mouseX);
-		int scaledMouseY = scaledMouseY(mouseY);
-
 		this.renderMenuBackground(g);
-		pushReferencePose(g);
 		layout.drawBackground(g);
 		layout.drawPanel(g);
-		super.render(g, scaledMouseX, scaledMouseY, delta);
+		super.render(g, mouseX, mouseY, delta);
 
 		int logoWidth = layout.w(54);
 		int logoHeight = logoWidth * LOGO_H / LOGO_W;
@@ -175,7 +169,6 @@ public final class BridgeConfigScreen extends EdenReferenceScreen {
 		int metaRight = layout.panelX() + layout.panelWidth() - layout.w(14);
 		g.drawString(this.font, versionText, metaRight - this.font.width(versionText), layout.y(14), 0xFFAAAAAA);
 		g.drawString(this.font, updateText, metaRight - this.font.width(updateText), layout.y(28), pendingUpdate != null ? 0xFF55FF55 : 0xFFAAAAAA);
-		popReferencePose(g);
 	}
 
 	private void drawSettingLabel(GuiGraphics g, String text, int baseY) {
@@ -188,25 +181,6 @@ public final class BridgeConfigScreen extends EdenReferenceScreen {
 		this.minecraft.setScreen(parent);
 	}
 
-	@Override
-	public boolean mouseClicked(MouseButtonEvent event, boolean bl) {
-		return super.mouseClicked(rescale(event), bl);
-	}
-
-	@Override
-	public boolean mouseReleased(MouseButtonEvent event) {
-		return super.mouseReleased(rescale(event));
-	}
-
-	@Override
-	public boolean mouseDragged(MouseButtonEvent event, double d, double e) {
-		return super.mouseDragged(rescale(event), d / uiScale, e / uiScale);
-	}
-
-	@Override
-	public boolean mouseScrolled(double mouseX, double mouseY, double d, double e) {
-		return super.mouseScrolled(mouseX / uiScale, mouseY / uiScale, d, e);
-	}
 	private final class PreviewSizeSlider extends AbstractSliderButton {
 		private static final int MIN = 1;
 		private static final int MAX = 100;
