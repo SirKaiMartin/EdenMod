@@ -1,190 +1,421 @@
 package tel.eden.mod.gui;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-
-import me.shedaniel.clothconfig2.api.AbstractConfigListEntry;
-import me.shedaniel.clothconfig2.api.ConfigBuilder;
-import me.shedaniel.clothconfig2.api.ConfigCategory;
-import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
-import net.minecraft.client.Minecraft;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.events.GuiEventListener;
-import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import tel.eden.mod.EdenModClient;
 import tel.eden.mod.config.BridgeConfig;
+import tel.eden.mod.update.UpdateChecker;
+import tel.eden.mod.update.UpdateInfo;
 
-/** Factory for the bridge config screen, built on Cloth Config. */
-public final class BridgeConfigScreen {
+/**
+ * Fullscreen bridge config screen.
+ *
+ * <p>Unlike the other Eden screens (which are centered floating panels), the
+ * config screen fills the window like a vanilla options menu. Settings live in a
+ * smooth-scrolling list built from row helpers: each option is a single
+ * {@code addToggleRow}/{@code addCycleRow}/{@code addSliderRow} call that registers
+ * the control, its reset button, and its label together — so the screen scales to
+ * any number of settings, and the list glides (pixel-smooth) when it overflows.
+ *
+ * <p>Row controls are registered as normal Screen widgets (so input — including
+ * slider dragging — is handled natively), but rendered by hand inside a scissor so
+ * scrolling clips cleanly. Rows outside the viewport are hidden, so they can't be
+ * clicked from the header/footer gaps.
+ */
+public final class BridgeConfigScreen extends Screen {
+	private static final Identifier LOGO_TEXTURE = Identifier.parse("edenmod:icon.png");
+	private static final int LOGO_W = 256;
+	private static final int LOGO_H = 256;
 
-	private BridgeConfigScreen() {
-	}
+	private static final int MAX_CONTENT_WIDTH = 420;
+	private static final int ROW_HEIGHT = 24;
+	private static final int CONTROL_W = 96;
+	private static final int RESET_W = 20;
+	private static final int SCROLLBAR_W = 6;
+	private static final int HEADER_BOTTOM = 112;
+	private static final int FOOTER_HEIGHT = 40;
+	// Fraction of the remaining distance the list glides each frame (smoothness).
+	private static final double SCROLL_EASE = 0.4;
+
+	private final Screen parent;
+	private final EdenModClient mod;
+	private final BridgeConfig config;
+
+	private final List<SettingRow> rows = new ArrayList<>();
+	private Button linkButton;
+	private double scroll;
+	private double scrollTarget;
+	private boolean draggingScrollbar;
 
 	public static Screen create(Screen parent, EdenModClient mod) {
-		BridgeConfig config = mod.config();
-		ConfigBuilder builder = ConfigBuilder.create().setParentScreen(parent).setTitle(Component.literal("EdenMod")).setSavingRunnable(config::save);
-
-		ConfigEntryBuilder eb = builder.entryBuilder();
-		ConfigCategory cat = builder.getOrCreateCategory(Component.literal("Bridge Settings"));
-
-		cat.addEntry(new LogoEntry());
-		cat.addEntry(eb.startTextDescription(linkStatusText(config)).build());
-		cat.addEntry(new LinkButtonEntry(parent, mod));
-
-		cat.addEntry(eb.startBooleanToggle(Component.literal("Bridge"), config.enabled).setDefaultValue(true).setSaveConsumer(v -> config.enabled = v).setYesNoTextSupplier(v -> Component.literal(v ? "Enabled" : "Disabled")).build());
-
-		cat.addEntry(eb.startBooleanToggle(Component.literal("My login/logout messages"), config.announceSelfPresence).setDefaultValue(true).setSaveConsumer(v -> config.announceSelfPresence = v).setYesNoTextSupplier(v -> Component.literal(v ? "On" : "Off")).build());
-
-		cat.addEntry(eb.startBooleanToggle(Component.literal("Party feed"), config.partyAnnounce).setDefaultValue(true).setSaveConsumer(v -> config.partyAnnounce = v).setYesNoTextSupplier(v -> Component.literal(v ? "On" : "Off")).build());
-
-		cat.addEntry(eb.startEnumSelector(Component.literal("Game Messages"), BridgeConfig.GameDisplayMode.class, config.gameDisplayMode).setDefaultValue(BridgeConfig.GameDisplayMode.ALL).setSaveConsumer(v -> config.gameDisplayMode = v).build());
-
-		cat.addEntry(eb.startIntSlider(Component.literal("Image Preview Size"), config.imagePreviewSize, 20, 80).setDefaultValue(40).setSaveConsumer(v -> config.imagePreviewSize = v).setTextGetter(v -> Component.literal(v + "%")).build());
-
-		return builder.build();
+		return new BridgeConfigScreen(parent, mod);
 	}
 
-	private static Component linkStatusText(BridgeConfig config) {
+	private BridgeConfigScreen(Screen parent, EdenModClient mod) {
+		super(Component.literal("EdenMod"));
+		this.parent = parent;
+		this.mod = mod;
+		this.config = mod.config();
+	}
+
+	@Override
+	protected void init() {
+		super.init();
+		rows.clear();
+		int cx = contentX();
+		int cw = contentWidth();
+
+		linkButton = this.addRenderableWidget(Button.builder(Component.literal("Link account"), button -> startLinkFlow()).bounds(cx, 84, cw, 20).build());
+
+		// --- One line per setting; the list handles layout + smooth scrolling. ---
+		addToggleRow("Bridge", () -> config.enabled, v -> config.enabled = v, "Enabled", "Disabled", true);
+		addToggleRow("My login/logout messages", () -> config.announceSelfPresence, v -> config.announceSelfPresence = v, "On", "Off", true);
+		addToggleRow("Party feed", () -> config.partyAnnounce, v -> config.partyAnnounce = v, "On", "Off", true);
+		addCycleRow("Game messages", () -> shortGameModeLabel(config.gameDisplayMode), () -> config.gameDisplayMode = nextGameMode(config.gameDisplayMode), () -> config.gameDisplayMode = BridgeConfig.GameDisplayMode.ALL);
+		PreviewSizeSlider slider = new PreviewSizeSlider(CONTROL_W, 20);
+		addSliderRow("Image preview size", slider, slider::syncFromConfig, () -> config.imagePreviewSize = 40);
+		// ------------------------------------------------------------------------
+
+		this.addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose()).bounds(cx, this.height - 30, cw, 20).build());
+
+		refreshRows();
+		scrollTarget = clampScroll(scrollTarget);
+		scroll = scrollTarget;
+	}
+
+	private void addToggleRow(String label, Supplier<Boolean> get, Consumer<Boolean> set, String onText, String offText, boolean resetValue) {
+		addButtonRow(label, () -> Component.literal(get.get() ? onText : offText), () -> set.accept(!get.get()), () -> set.accept(resetValue));
+	}
+
+	private void addCycleRow(String label, Supplier<String> valueLabel, Runnable onClick, Runnable onReset) {
+		addButtonRow(label, () -> Component.literal(valueLabel.get()), onClick, onReset);
+	}
+
+	private void addButtonRow(String label, Supplier<Component> valueText, Runnable onClick, Runnable onReset) {
+		Button control = Button.builder(Component.empty(), button -> {
+			onClick.run();
+			saveConfig();
+		}).bounds(0, 0, CONTROL_W, 20).build();
+		addRow(label, control, () -> control.setMessage(valueText.get()), onReset);
+	}
+
+	private void addSliderRow(String label, AbstractSliderButton slider, Runnable sync, Runnable onReset) {
+		addRow(label, slider, sync, onReset);
+	}
+
+	private void addRow(String label, AbstractWidget control, Runnable refresh, Runnable onReset) {
+		Button reset = Button.builder(Component.literal("R"), button -> {
+			onReset.run();
+			saveConfig();
+		}).bounds(0, 0, RESET_W, 20).build();
+		// addWidget (input only, not a renderable): the Screen routes clicks/drags to
+		// them natively — so the slider works — while we draw them inside a scissor.
+		this.addWidget(control);
+		this.addWidget(reset);
+		rows.add(new SettingRow(label, control, reset, refresh));
+	}
+
+	private void saveConfig() {
+		config.save();
+		refreshRows();
+	}
+
+	private void refreshRows() {
+		for (SettingRow row : rows) {
+			row.refresh.run();
+		}
+	}
+
+	private void startLinkFlow() {
+		linkButton.setMessage(Component.literal("Opening browser..."));
+		linkButton.active = false;
+		mod.startLinkFlow(() -> this.minecraft.execute(() -> this.minecraft.setScreen(BridgeConfigScreen.create(parent, mod))));
+	}
+
+	private BridgeConfig.GameDisplayMode nextGameMode(BridgeConfig.GameDisplayMode current) {
+		BridgeConfig.GameDisplayMode[] values = BridgeConfig.GameDisplayMode.values();
+		return values[(current.ordinal() + 1) % values.length];
+	}
+
+	private String shortGameModeLabel(BridgeConfig.GameDisplayMode mode) {
+		return switch (mode) {
+			case ALL -> "Shown";
+			case NONE -> "Hidden";
+			case REACTIONS -> "React Only";
+		};
+	}
+
+	private Component linkStatusText() {
 		if (config.jwt.isEmpty()) {
-			return Component.literal("Not linked").withStyle(s -> s.withColor(0xAAAAAA));
+			return Component.literal("Not linked").withStyle(style -> style.withColor(0xAAAAAA));
 		}
 		if (!config.hasValidJwt()) {
-			return Component.literal("Token expired — re-link").withStyle(s -> s.withColor(0xFF5555));
+			return Component.literal("Token expired - re-link").withStyle(style -> style.withColor(0xFF5555));
 		}
 		String name = config.linkedUsername;
-		return Component.literal(name.isEmpty() ? "Linked" : "Linked as " + name).withStyle(s -> s.withColor(0x55FF55));
+		return Component.literal(name.isEmpty() ? "Linked" : "Linked as " + name).withStyle(style -> style.withColor(0x55FF55));
 	}
 
-	/** A single row that renders a full-width "Link account" button. */
-	private static final class LinkButtonEntry extends AbstractConfigListEntry<Void> {
+	// --- Fullscreen geometry (recomputed each frame so it tracks window resizes). ---
 
-		private final Screen parent;
-		private final EdenModClient mod;
-		private Button linkBtn;
+	private int contentWidth() {
+		return Math.min(MAX_CONTENT_WIDTH, this.width - 40);
+	}
 
-		LinkButtonEntry(Screen parent, EdenModClient mod) {
-			super(Component.literal("Link account"), false);
-			this.parent = parent;
-			this.mod = mod;
-		}
+	private int contentX() {
+		return (this.width - contentWidth()) / 2;
+	}
 
-		@Override
-		public Void getValue() {
-			return null;
-		}
+	private int listTop() {
+		return HEADER_BOTTOM;
+	}
 
-		@Override
-		public Optional<Void> getDefaultValue() {
-			return Optional.empty();
-		}
+	private int listHeight() {
+		return Math.max(ROW_HEIGHT, this.height - FOOTER_HEIGHT - HEADER_BOTTOM);
+	}
 
-		@Override
-		public void save() {
-		}
+	private int contentHeight() {
+		return rows.size() * ROW_HEIGHT;
+	}
 
-		@Override
-		public int getItemHeight() {
-			return 30;
-		}
+	private double maxScroll() {
+		return Math.max(0, contentHeight() - listHeight());
+	}
 
-		@Override
-		public List<? extends GuiEventListener> children() {
-			return linkBtn == null ? List.of() : List.of(linkBtn);
-		}
+	private double clampScroll(double value) {
+		return Math.max(0, Math.min(value, maxScroll()));
+	}
 
-		@Override
-		public List<? extends NarratableEntry> narratables() {
-			return linkBtn == null ? List.of() : List.of(linkBtn);
-		}
+	private int scrollbarX() {
+		return contentX() + contentWidth() + 4;
+	}
 
-		@Override
-		public void render(GuiGraphics g, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float delta) {
-			if (linkBtn == null) {
-				linkBtn = Button.builder(Component.literal("Link account"), b -> onLink()).bounds(x, y, entryWidth, 20).build();
-			} else {
-				linkBtn.setX(x);
-				linkBtn.setY(y);
-				linkBtn.setWidth(entryWidth);
+	private int controlX() {
+		return contentX() + contentWidth() - 10 - RESET_W - 8 - CONTROL_W;
+	}
+
+	private int resetX() {
+		return contentX() + contentWidth() - 10 - RESET_W;
+	}
+
+	private int rowY(int index) {
+		return (int) Math.round(listTop() - scroll + index * ROW_HEIGHT);
+	}
+
+	private boolean rowInView(int rowY) {
+		return rowY + ROW_HEIGHT > listTop() && rowY < listTop() + listHeight();
+	}
+
+	private void positionRow(SettingRow row, int rowY) {
+		row.control.setX(controlX());
+		row.control.setY(rowY);
+		row.control.setWidth(CONTROL_W);
+		row.reset.setX(resetX());
+		row.reset.setY(rowY);
+		row.reset.setWidth(RESET_W);
+	}
+
+	private void advanceScroll() {
+		scrollTarget = clampScroll(scrollTarget);
+		double diff = scrollTarget - scroll;
+		scroll = Math.abs(diff) < 0.5 ? scrollTarget : scroll + diff * SCROLL_EASE;
+		scroll = clampScroll(scroll);
+	}
+
+	/** Position each row and hide the ones scrolled outside the viewport. */
+	private void layoutRows() {
+		for (int i = 0; i < rows.size(); i++) {
+			int rowY = rowY(i);
+			boolean inView = rowInView(rowY);
+			SettingRow row = rows.get(i);
+			row.control.visible = inView;
+			row.reset.visible = inView;
+			if (inView) {
+				positionRow(row, rowY);
 			}
-			linkBtn.render(g, mouseX, mouseY, delta);
-		}
-
-		private void onLink() {
-			Minecraft mc = Minecraft.getInstance();
-			if (linkBtn != null) {
-				linkBtn.setMessage(Component.literal("Opening browser…"));
-				linkBtn.active = false;
-			}
-			mod.startLinkFlow(() -> mc.setScreen(BridgeConfigScreen.create(parent, mod)));
 		}
 	}
 
-	private static final class LogoEntry extends AbstractConfigListEntry<Void> {
-		private static final net.minecraft.resources.Identifier LOGO_TEXTURE = net.minecraft.resources.Identifier.parse("edenmod:icon.png");
-		// Intrinsic dimensions of icon.png, needed to normalise the blit UVs
-		// so the whole image is sampled and scaled into the on-screen box.
-		private static final int LOGO_W = 722;
-		private static final int LOGO_H = 693;
+	@Override
+	public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+		this.renderMenuBackground(g);
+		advanceScroll();
+		layoutRows();
+		super.render(g, mouseX, mouseY, delta);
 
-		LogoEntry() {
-			super(Component.empty(), false);
+		int cx = contentX();
+		int cw = contentWidth();
+		int top = listTop();
+		int height = listHeight();
+		int centerX = this.width / 2;
+
+		int logoWidth = 40;
+		int logoHeight = logoWidth * LOGO_H / LOGO_W;
+		g.blit(RenderPipelines.GUI_TEXTURED, LOGO_TEXTURE, centerX - (logoWidth / 2), 10, 0.0f, 0.0f, logoWidth, logoHeight, LOGO_W, LOGO_H, LOGO_W, LOGO_H);
+		g.drawCenteredString(this.font, this.title, centerX, 54, 0xFFFFFFFF);
+		g.drawCenteredString(this.font, linkStatusText(), centerX, 68, 0xFFFFFFFF);
+
+		g.fill(cx, top, cx + cw, top + height, 0x22000000);
+
+		int labelX = cx + 10;
+		g.enableScissor(cx, top, cx + cw, top + height);
+		for (int i = 0; i < rows.size(); i++) {
+			int rowY = rowY(i);
+			if (!rowInView(rowY)) {
+				continue;
+			}
+			SettingRow row = rows.get(i);
+			row.control.render(g, mouseX, mouseY, delta);
+			row.reset.render(g, mouseX, mouseY, delta);
+			g.drawString(this.font, row.label, labelX, rowY + 6, 0xFFA0A0A0);
+		}
+		g.disableScissor();
+
+		drawScrollbar(g, scrollbarX(), top, SCROLLBAR_W, height);
+
+		String currentVer = UpdateChecker.currentVersion();
+		if (currentVer == null) {
+			currentVer = "Unknown";
+		}
+		UpdateInfo pendingUpdate = EdenModClient.instance().getPendingUpdate();
+		String versionText = "v" + currentVer;
+		String updateText = pendingUpdate != null ? "Update Available: " + pendingUpdate.version() : "Up to date";
+		g.drawString(this.font, versionText, this.width - this.font.width(versionText) - 6, 6, 0xFFAAAAAA);
+		g.drawString(this.font, updateText, this.width - this.font.width(updateText) - 6, 18, pendingUpdate != null ? 0xFF55FF55 : 0xFFAAAAAA);
+	}
+
+	private void drawScrollbar(GuiGraphics g, int x, int y, int width, int height) {
+		if (maxScroll() <= 0) {
+			return;
+		}
+		g.fill(x, y, x + width, y + height, 0x2A000000);
+		int thumbHeight = Math.max(18, Math.round(height * (listHeight() / (float) contentHeight())));
+		int travel = Math.max(1, height - thumbHeight);
+		int thumbY = y + (int) Math.round((scroll / maxScroll()) * travel);
+		g.fill(x + 1, thumbY, x + width - 1, thumbY + thumbHeight, 0xFF8A8A8A);
+		g.fill(x + 1, thumbY, x + width - 1, thumbY + 1, 0xFFD8D8D8);
+		g.fill(x + 1, thumbY + thumbHeight - 1, x + width - 1, thumbY + thumbHeight, 0xFF444444);
+	}
+
+	private boolean isOverScrollbar(double mouseX, double mouseY) {
+		int top = listTop();
+		return mouseX >= scrollbarX() && mouseX <= scrollbarX() + SCROLLBAR_W && mouseY >= top && mouseY <= top + listHeight();
+	}
+
+	private boolean isOverList(double mouseX, double mouseY) {
+		int top = listTop();
+		return mouseX >= contentX() && mouseX <= contentX() + contentWidth() && mouseY >= top && mouseY <= top + listHeight();
+	}
+
+	private void scrollToMouse(double mouseY) {
+		double maxOffset = maxScroll();
+		if (maxOffset <= 0) {
+			scroll = 0;
+			scrollTarget = 0;
+			return;
+		}
+		int top = listTop();
+		int height = listHeight();
+		int thumbHeight = Math.max(18, Math.round(height * (listHeight() / (float) contentHeight())));
+		double relative = mouseY - top - (thumbHeight / 2.0);
+		double range = Math.max(1, height - thumbHeight);
+		double percent = Math.max(0.0, Math.min(1.0, relative / range));
+		scrollTarget = percent * maxOffset;
+		scroll = scrollTarget;
+	}
+
+	@Override
+	public boolean mouseClicked(MouseButtonEvent event, boolean bl) {
+		if (event.button() == 0 && isOverScrollbar(event.x(), event.y())) {
+			draggingScrollbar = true;
+			scrollToMouse(event.y());
+			return true;
+		}
+		return super.mouseClicked(event, bl);
+	}
+
+	@Override
+	public boolean mouseReleased(MouseButtonEvent event) {
+		draggingScrollbar = false;
+		return super.mouseReleased(event);
+	}
+
+	@Override
+	public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+		if (draggingScrollbar) {
+			scrollToMouse(event.y());
+			return true;
+		}
+		return super.mouseDragged(event, dx, dy);
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double dx, double dy) {
+		if (maxScroll() > 0 && (isOverList(mouseX, mouseY) || isOverScrollbar(mouseX, mouseY))) {
+			scrollTarget = clampScroll(scrollTarget - dy * ROW_HEIGHT * 2);
+			return true;
+		}
+		return super.mouseScrolled(mouseX, mouseY, dx, dy);
+	}
+
+	@Override
+	public void onClose() {
+		config.save();
+		this.minecraft.setScreen(parent);
+	}
+
+	private static final class SettingRow {
+		private final String label;
+		private final AbstractWidget control;
+		private final Button reset;
+		private final Runnable refresh;
+
+		private SettingRow(String label, AbstractWidget control, Button reset, Runnable refresh) {
+			this.label = label;
+			this.control = control;
+			this.reset = reset;
+			this.refresh = refresh;
+		}
+	}
+
+	private final class PreviewSizeSlider extends AbstractSliderButton {
+		private static final int MIN = 1;
+		private static final int MAX = 100;
+
+		private PreviewSizeSlider(int width, int height) {
+			super(0, 0, width, height, Component.empty(), 0.0d);
+			syncFromConfig();
+		}
+
+		private void syncFromConfig() {
+			this.value = (config.imagePreviewSize - MIN) / (double) (MAX - MIN);
+			updateMessage();
 		}
 
 		@Override
-		public Void getValue() {
-			return null;
+		protected void updateMessage() {
+			setMessage(Component.literal(config.imagePreviewSize + "%"));
 		}
 
 		@Override
-		public Optional<Void> getDefaultValue() {
-			return Optional.empty();
-		}
-
-		@Override
-		public void save() {
-		}
-
-		@Override
-		public int getItemHeight() {
-			return 70;
-		}
-
-		@Override
-		public void render(GuiGraphics g, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float delta) {
-			int logoW = 64;
-			int logoH = logoW * LOGO_H / LOGO_W;
-			g.blit(RenderPipelines.GUI_TEXTURED, LOGO_TEXTURE, x + entryWidth / 2 - logoW / 2, y + 3, 0.0f, 0.0f, logoW, logoH, LOGO_W, LOGO_H, LOGO_W, LOGO_H);
-
-			Minecraft mc = Minecraft.getInstance();
-			String currentVer = tel.eden.mod.update.UpdateChecker.currentVersion();
-			if (currentVer == null)
-				currentVer = "Unknown";
-
-			tel.eden.mod.update.UpdateInfo pendingUpdate = tel.eden.mod.EdenModClient.instance().getPendingUpdate();
-			String updateText = (pendingUpdate != null) ? "Update Available: " + pendingUpdate.version() : "Up to date";
-
-			String text1 = "v" + currentVer;
-			String text2 = updateText;
-
-			int textX1 = x + entryWidth - mc.font.width(text1) - 5;
-			int textX2 = x + entryWidth - mc.font.width(text2) - 5;
-
-			g.drawString(mc.font, text1, textX1, y + 15, 0xFFAAAAAA);
-			g.drawString(mc.font, text2, textX2, y + 30, pendingUpdate != null ? 0xFF55FF55 : 0xFFAAAAAA);
-		}
-
-		@Override
-		public List<? extends GuiEventListener> children() {
-			return List.of();
-		}
-
-		@Override
-		public List<? extends NarratableEntry> narratables() {
-			return List.of();
+		protected void applyValue() {
+			int snapped = MIN + (int) Math.round(this.value * (MAX - MIN));
+			if (snapped != config.imagePreviewSize) {
+				config.imagePreviewSize = snapped;
+				config.save();
+			}
+			updateMessage();
 		}
 	}
 }
