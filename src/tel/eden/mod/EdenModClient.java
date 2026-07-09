@@ -400,14 +400,23 @@ public final class EdenModClient implements ClientModInitializer {
 				}
 
 				@Override
-				public void onPillMessage(String label, String content) {
+				public void onPillMessage(String label, String content, String colorHex) {
 					if (GAMES_PILL_LABEL.equals(label) && config.gameDisplayMode != BridgeConfig.GameDisplayMode.ALL) {
 						return;
 					}
 					if ("reactions".equals(label) && config.gameDisplayMode == BridgeConfig.GameDisplayMode.NONE) {
 						return;
 					}
-					display(() -> DiscordChatFormatter.pill(label, content));
+					Integer colorRgb = null;
+					if (colorHex != null && !colorHex.isEmpty()) {
+						try {
+							colorRgb = Integer.parseInt(colorHex, 16);
+						} catch (NumberFormatException ignored) {
+							// malformed color: fall back to the default gold pill
+						}
+					}
+					Integer finalColorRgb = colorRgb;
+					display(() -> DiscordChatFormatter.pill(label, content, finalColorRgb));
 				}
 
 				@Override

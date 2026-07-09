@@ -69,10 +69,12 @@ public final class BridgeWebSocketClient {
 		void onConnectionRejected(String code);
 
 		/**
-		 * A gold-pill bridge line (Quick Reactions, {@code /eden cf}/{@code diceroll}):
-		 * a gold pill labelled {@code label}, then {@code content}.
+		 * A pill bridge line (Quick Reactions, {@code /eden cf}/{@code diceroll}, daily
+		 * announcements): a pill labelled {@code label}, then {@code content}.
+		 * {@code colorHex} is an optional {@code "RRGGBB"} override; empty means the
+		 * default gold.
 		 */
-		void onPillMessage(String label, String content);
+		void onPillMessage(String label, String content, String colorHex);
 	}
 
 	private final URI uri;
@@ -523,7 +525,7 @@ public final class BridgeWebSocketClient {
 				case "partyListReply" -> sink.onPartyList(parsePartyList(obj));
 				case "partyFeedback" -> sink.onPartyFeedback(get(obj, "message"));
 				case "gameFeedback" -> sink.onGameFeedback(get(obj, "message"));
-				case "pillMessage" -> sink.onPillMessage(get(obj, "label"), get(obj, "content"));
+				case "pillMessage" -> sink.onPillMessage(get(obj, "label"), get(obj, "content"), get(obj, "color"));
 				case "error" -> {
 					String code = get(obj, "code");
 					LOGGER.warn("Bridge rejected connection: {}", code);

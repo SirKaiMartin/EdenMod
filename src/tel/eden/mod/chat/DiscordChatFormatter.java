@@ -176,7 +176,16 @@ public final class DiscordChatFormatter {
 	 * {@link #format} but in gold rather than the green {@code discord} styling.
 	 */
 	public static Component pill(String label, String content) {
-		MutableComponent body = Component.empty().append(Component.literal(pillLabel(label)).withStyle(Style.EMPTY.withFont(PILL_FONT).withColor(ChatFormatting.GOLD))).append(Component.literal(" " + content).withStyle(ChatFormatting.GOLD));
+		return pill(label, content, null);
+	}
+
+	/**
+	 * Build a pill bridge line in a custom color (e.g. the pink daily gambit-reset
+	 * reminder). {@code colorRgb} of {@code null} falls back to the default gold.
+	 */
+	public static Component pill(String label, String content, Integer colorRgb) {
+		int rgb = colorRgb != null ? colorRgb : ChatFormatting.GOLD.getColor();
+		MutableComponent body = Component.empty().append(Component.literal(pillLabel(label)).withStyle(Style.EMPTY.withFont(PILL_FONT).withColor(rgb))).append(Component.literal(" " + content).withStyle(style -> style.withColor(rgb)));
 		return withGuildPrefix(body);
 	}
 
