@@ -62,12 +62,6 @@ public abstract class ChatScreenMixin {
 	private static final int EDENMOD_PICKER_SLIDER_WIDTH = 52;
 
 	@Unique
-	private static final int EDENMOD_PICKER_SLIDER_HEIGHT = 6;
-
-	@Unique
-	private static final int EDENMOD_HEADER_ICON_SIZE = 9;
-
-	@Unique
 	private static final int EDENMOD_HEADER_ICON_SPACING = 8;
 
 	@Unique
@@ -610,12 +604,6 @@ public abstract class ChatScreenMixin {
 	private int edenmod$maxPickerScrollRows() {
 		int pageSize = edenmod$pickerColumns() * edenmod$pickerRows();
 		return Math.max(0, (int) Math.ceil(edenmod$pickerEntries().size() / (double) pageSize) - 1);
-	}
-
-	@Unique
-	private int edenmod$totalPickerRows() {
-		List<String> entries = edenmod$pickerEntries();
-		return Math.max(1, (int) Math.ceil(entries.size() / (double) edenmod$pickerColumns()));
 	}
 
 	@Unique
