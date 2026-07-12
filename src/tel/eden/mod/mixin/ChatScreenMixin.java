@@ -104,12 +104,6 @@ public abstract class ChatScreenMixin {
 	private String edenmod$suggestionSeed = "";
 
 	@Unique
-	private boolean edenmod$preserveSuggestionSeed;
-
-	@Unique
-	private boolean edenmod$suggestionApplied;
-
-	@Unique
 	private boolean edenmod$pickerOpen;
 
 	@Unique
@@ -169,25 +163,19 @@ public abstract class ChatScreenMixin {
 		}
 		int key = event.key();
 		if (key == GLFW.GLFW_KEY_TAB) {
-			if (edenmod$suggestionApplied && !edenmod$emoteSuggestions.isEmpty()) {
-				edenmod$selectedSuggestion = Math.floorMod(edenmod$selectedSuggestion + 1, edenmod$emoteSuggestions.size());
-				edenmod$ensureSuggestionVisible();
-			}
-			edenmod$applySuggestion(edenmod$selectedSuggestion, true);
+			edenmod$applySuggestion(edenmod$selectedSuggestion);
 			cir.setReturnValue(true);
 			return;
 		}
 		if (key == GLFW.GLFW_KEY_UP) {
 			edenmod$selectedSuggestion = Math.floorMod(edenmod$selectedSuggestion - 1, edenmod$emoteSuggestions.size());
 			edenmod$ensureSuggestionVisible();
-			edenmod$applySuggestion(edenmod$selectedSuggestion, true);
 			cir.setReturnValue(true);
 			return;
 		}
 		if (key == GLFW.GLFW_KEY_DOWN) {
 			edenmod$selectedSuggestion = Math.floorMod(edenmod$selectedSuggestion + 1, edenmod$emoteSuggestions.size());
 			edenmod$ensureSuggestionVisible();
-			edenmod$applySuggestion(edenmod$selectedSuggestion, true);
 			cir.setReturnValue(true);
 		}
 	}
@@ -208,7 +196,7 @@ public abstract class ChatScreenMixin {
 		}
 		int hit = edenmod$suggestionIndexAt(event.x(), event.y());
 		if (hit >= 0) {
-			edenmod$applySuggestion(hit, false);
+			edenmod$applySuggestion(hit);
 			cir.setReturnValue(true);
 		}
 	}
@@ -265,16 +253,12 @@ public abstract class ChatScreenMixin {
 			return;
 		}
 		String previousSeed = edenmod$suggestionSeed;
-		String query = token.complete() && edenmod$preserveSuggestionSeed ? edenmod$suggestionSeed : token.query();
-		if (!token.complete()) {
-			if (!token.query().equals(previousSeed)) {
-				edenmod$selectedSuggestion = 0;
-				edenmod$suggestionScroll = 0;
-			}
-			edenmod$suggestionSeed = token.query();
-			edenmod$suggestionApplied = false;
-			edenmod$preserveSuggestionSeed = false;
+		String query = token.query();
+		if (!token.query().equals(previousSeed)) {
+			edenmod$selectedSuggestion = 0;
+			edenmod$suggestionScroll = 0;
 		}
+		edenmod$suggestionSeed = token.query();
 		String lowered = query.toLowerCase(java.util.Locale.ROOT);
 		edenmod$autocompletePool.addAll(edenmod$autocompleteShortcodes());
 		List<String> prefixMatches = new ArrayList<>();
@@ -305,20 +289,7 @@ public abstract class ChatScreenMixin {
 			return null;
 		}
 		if (edenmod$isCursorAfterCompleteToken(value, cursor)) {
-			int closingColon = cursor - 1;
-			int nameStart = closingColon;
-			while (nameStart > 0 && edenmod$isEmoteNameChar(value.charAt(nameStart - 1))) {
-				nameStart--;
-			}
-			if (nameStart <= 0 || value.charAt(nameStart - 1) != ':') {
-				return null;
-			}
-			int startColon = nameStart - 1;
-			if (!edenmod$isTokenBoundary(value, startColon - 1)) {
-				return null;
-			}
-			String query = value.substring(startColon + 1, closingColon);
-			return query.chars().allMatch(c -> edenmod$isEmoteNameChar((char) c)) ? new EmoteToken(startColon, cursor, query, true) : null;
+			return null;
 		}
 		int tokenStart = cursor;
 		while (tokenStart > 0 && edenmod$isEmoteNameChar(value.charAt(tokenStart - 1))) {
@@ -339,7 +310,7 @@ public abstract class ChatScreenMixin {
 			return null;
 		}
 		String query = value.substring(startColon + 1, cursor);
-		return query.chars().allMatch(c -> edenmod$isEmoteNameChar((char) c)) ? new EmoteToken(startColon, tokenEnd, query, false) : null;
+		return query.chars().allMatch(c -> edenmod$isEmoteNameChar((char) c)) ? new EmoteToken(startColon, tokenEnd, query) : null;
 	}
 
 	@Unique
@@ -371,19 +342,7 @@ public abstract class ChatScreenMixin {
 	}
 
 	@Unique
-	private static boolean edenmod$isCompleteTokenEndingAt(String value, int cursor) {
-		if (cursor <= 0 || cursor > value.length() || value.charAt(cursor - 1) != ':') {
-			return false;
-		}
-		int nameStart = cursor - 1;
-		while (nameStart > 0 && edenmod$isEmoteNameChar(value.charAt(nameStart - 1))) {
-			nameStart--;
-		}
-		return nameStart > 0 && value.charAt(nameStart - 1) == ':';
-	}
-
-	@Unique
-	private void edenmod$applySuggestion(int index, boolean preserveSeed) {
+	private void edenmod$applySuggestion(int index) {
 		if (index < 0 || index >= edenmod$emoteSuggestions.size() || edenmod$emoteTokenStart < 0) {
 			return;
 		}
@@ -392,8 +351,7 @@ public abstract class ChatScreenMixin {
 		String updated = value.substring(0, edenmod$emoteTokenStart) + suggestion + value.substring(edenmod$emoteTokenEnd);
 		input.setValue(updated);
 		input.setCursorPosition(edenmod$emoteTokenStart + suggestion.length());
-		edenmod$preserveSuggestionSeed = preserveSeed;
-		edenmod$suggestionApplied = true;
+		edenmod$resetSuggestionSession();
 		edenmod$refreshEmoteSuggestions();
 	}
 
@@ -472,7 +430,7 @@ public abstract class ChatScreenMixin {
 			edenmod$handleHeaderAction(headerAction, event.x());
 			return true;
 		}
-		if (edenmod$pickerSettingsOpen) {
+		if (edenmod$pickerSettingsOpen && edenmod$isInsideSettingsPanel(event.x(), event.y())) {
 			return true;
 		}
 		int visibleIndex = edenmod$pickerVisibleIndexAt(event.x(), event.y());
@@ -533,8 +491,8 @@ public abstract class ChatScreenMixin {
 		graphics.fill(edenmod$pickerX, edenmod$pickerY, edenmod$pickerX + panelWidth, edenmod$pickerY + panelHeight, 0xEE111111);
 		graphics.fill(edenmod$pickerX, edenmod$pickerY, edenmod$pickerX + panelWidth, edenmod$pickerY + 1, 0xFF787878);
 		graphics.drawString(font, edenmod$pickerFavoritesOnly ? "Favorites" : "Emotes", edenmod$pickerX + EDENMOD_PICKER_PADDING, edenmod$pickerY + 5, 0xFFE0E0E0);
-		graphics.drawString(font, EDENMOD_FAVORITE_ICON, edenmod$favoriteButtonX(), edenmod$pickerY + 4, edenmod$pickerFavoritesOnly ? 0xFFFFD75E : 0xFFB0B0B0);
 		graphics.drawString(font, EDENMOD_SETTINGS_ICON, edenmod$wrenchButtonX(), edenmod$pickerY + 4, edenmod$pickerSettingsOpen ? 0xFFE0E0E0 : 0xFFB0B0B0);
+		graphics.drawString(font, EDENMOD_FAVORITE_ICON, edenmod$favoriteButtonX(), edenmod$pickerY + 4, edenmod$pickerFavoritesOnly ? 0xFFFFD75E : 0xFFB0B0B0);
 		for (int i = 0; i < visibleEntries.size(); i++) {
 			int col = i % edenmod$pickerColumns();
 			int row = i / edenmod$pickerColumns();
@@ -693,13 +651,13 @@ public abstract class ChatScreenMixin {
 	@Unique
 	private int edenmod$favoriteButtonX() {
 		Font font = Minecraft.getInstance().font;
-		return edenmod$pickerX + edenmod$pickerPanelWidth() - EDENMOD_PICKER_PADDING - font.width(EDENMOD_FAVORITE_ICON);
+		return edenmod$wrenchButtonX() + font.width(EDENMOD_SETTINGS_ICON) + EDENMOD_HEADER_ICON_SPACING;
 	}
 
 	@Unique
 	private int edenmod$wrenchButtonX() {
 		Font font = Minecraft.getInstance().font;
-		return edenmod$favoriteButtonX() - EDENMOD_HEADER_ICON_SPACING - font.width(EDENMOD_SETTINGS_ICON);
+		return edenmod$pickerX + edenmod$pickerPanelWidth() - EDENMOD_PICKER_PADDING - font.width(EDENMOD_FAVORITE_ICON) - EDENMOD_HEADER_ICON_SPACING - font.width(EDENMOD_SETTINGS_ICON);
 	}
 
 	@Unique
@@ -736,6 +694,11 @@ public abstract class ChatScreenMixin {
 		if (insideMain) {
 			return true;
 		}
+		return edenmod$isInsideSettingsPanel(mouseX, mouseY);
+	}
+
+	@Unique
+	private boolean edenmod$isInsideSettingsPanel(double mouseX, double mouseY) {
 		return edenmod$pickerSettingsOpen && mouseX >= edenmod$settingsPanelX() && mouseX <= edenmod$settingsPanelX() + EDENMOD_SETTINGS_PANEL_WIDTH && mouseY >= edenmod$settingsPanelY() && mouseY <= edenmod$settingsPanelY() + EDENMOD_SETTINGS_PANEL_HEIGHT;
 	}
 
@@ -832,8 +795,6 @@ public abstract class ChatScreenMixin {
 		edenmod$selectedSuggestion = 0;
 		edenmod$suggestionScroll = 0;
 		edenmod$suggestionSeed = "";
-		edenmod$preserveSuggestionSeed = false;
-		edenmod$suggestionApplied = false;
 	}
 
 	@Unique
@@ -909,7 +870,7 @@ public abstract class ChatScreenMixin {
 	}
 
 	@Unique
-	private record EmoteToken(int start, int end, String query, boolean complete) {
+	private record EmoteToken(int start, int end, String query) {
 	}
 
 	@Unique
