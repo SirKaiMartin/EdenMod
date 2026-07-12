@@ -90,6 +90,21 @@ public final class BridgeConfig {
 	/** Client-side bindings that run commands from keyboard or mouse input. */
 	public List<CommandKeybind> commandKeybinds = new ArrayList<>();
 
+	/** Favorited chat emotes shown by the right-click picker when the star filter is enabled. */
+	public List<String> favoriteEmotes = new ArrayList<>();
+
+	/** Whether the custom chat emote UI (live render, autocomplete, picker) is enabled. */
+	public boolean chatEmoteUiEnabled = true;
+
+	/** Visible emote-picker columns in the chat overlay. */
+	public int emotePickerColumns = 5;
+
+	/** Visible emote-picker rows in the chat overlay before scrolling. */
+	public int emotePickerRows = 4;
+
+	/** Whether chat emote autocomplete should only suggest favorited emotes. */
+	public boolean autocompleteFavoriteEmotes = false;
+
 	public static final class CommandAlias {
 		public String alias = "";
 		public String command = "";
@@ -133,6 +148,11 @@ public final class BridgeConfig {
 					if (config.commandKeybinds == null) {
 						config.commandKeybinds = new ArrayList<>();
 					}
+					if (config.favoriteEmotes == null) {
+						config.favoriteEmotes = new ArrayList<>();
+					}
+					config.emotePickerColumns = Math.max(1, Math.min(10, config.emotePickerColumns));
+					config.emotePickerRows = Math.max(1, Math.min(10, config.emotePickerRows));
 					config.imagePreviewSize = Math.max(1, Math.min(100, config.imagePreviewSize));
 					return config;
 				}

@@ -82,6 +82,7 @@ public final class BridgeConfigScreen extends Screen {
 		addToggleRow("Bridge", () -> config.enabled, v -> config.enabled = v, "Enabled", "Disabled", true);
 		addToggleRow("My login/logout messages", () -> config.announceSelfPresence, v -> config.announceSelfPresence = v, "On", "Off", true);
 		addToggleRow("Party feed", () -> config.partyAnnounce, v -> config.partyAnnounce = v, "On", "Off", true);
+		addToggleRow("Chat emote tools", () -> config.chatEmoteUiEnabled, v -> config.chatEmoteUiEnabled = v, "On", "Off", true);
 		addCycleRow("Game messages", () -> shortGameModeLabel(config.gameDisplayMode), () -> config.gameDisplayMode = nextGameMode(config.gameDisplayMode), () -> config.gameDisplayMode = BridgeConfig.GameDisplayMode.ALL);
 		PreviewSizeSlider slider = new PreviewSizeSlider(CONTROL_W, 20);
 		addSliderRow("Image preview size", slider, slider::syncFromConfig, () -> config.imagePreviewSize = 40);
