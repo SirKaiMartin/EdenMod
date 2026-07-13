@@ -74,7 +74,7 @@ public abstract class ChatScreenMixin {
 	private static final int EDENMOD_SETTINGS_PANEL_WIDTH = 96;
 
 	@Unique
-	private static final int EDENMOD_SETTINGS_PANEL_HEIGHT = 102;
+	private static final int EDENMOD_SETTINGS_PANEL_HEIGHT = 124;
 
 	@Unique
 	private final List<String> edenmod$emoteSuggestions = new ArrayList<>();
@@ -98,6 +98,15 @@ public abstract class ChatScreenMixin {
 	private String edenmod$suggestionSeed = "";
 
 	@Unique
+	private boolean edenmod$showSuggestionOverlay;
+
+	@Unique
+	private boolean edenmod$suggestionApplied;
+
+	@Unique
+	private boolean edenmod$preserveSuggestionSeed;
+
+	@Unique
 	private boolean edenmod$pickerOpen;
 
 	@Unique
@@ -119,6 +128,15 @@ public abstract class ChatScreenMixin {
 	private SliderTarget edenmod$draggingSlider;
 
 	@Unique
+	private boolean edenmod$draggingPicker;
+
+	@Unique
+	private int edenmod$pickerDragOffsetX;
+
+	@Unique
+	private int edenmod$pickerDragOffsetY;
+
+	@Unique
 	private int edenmod$sliderPreviewColumns = -1;
 
 	@Unique
@@ -127,28 +145,38 @@ public abstract class ChatScreenMixin {
 	@Inject(method = "init", at = @At("TAIL"))
 	private void edenmod$addEmoteFormatter(CallbackInfo ci) {
 		input.addFormatter((text, cursor) -> {
-			if (!edenmod$isChatEmoteUiEnabled()) {
+			if (!edenmod$isChatEmoteUiVisible()) {
 				return null;
 			}
 			FormattedCharSequence formatted = ChatEmoteFormatter.format(text);
 			return formatted;
 		});
+		if (EdenModClient.instance().shouldOpenEmotePickerOnChatOpen()) {
+			EdenModClient.instance().requestCenteredEmotePicker();
+		}
+		edenmod$openCenteredPickerIfRequested();
 	}
 
 	@Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
 	private void edenmod$handleChatOverlayKeys(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-		if (!edenmod$isChatEmoteUiEnabled()) {
+		if (!edenmod$isChatEmoteUiVisible() && !edenmod$isChatEmoteAutocompleteEnabled()) {
 			edenmod$resetOverlayState();
 			return;
 		}
-		if (edenmod$pickerOpen && event.key() == GLFW.GLFW_KEY_ESCAPE) {
+		if (edenmod$isChatEmoteUiVisible() && edenmod$pickerOpen && event.key() == GLFW.GLFW_KEY_ESCAPE) {
 			if (edenmod$pickerSettingsOpen) {
 				edenmod$pickerSettingsOpen = false;
 			} else {
 				edenmod$pickerOpen = false;
 			}
 			edenmod$draggingSlider = null;
+			edenmod$draggingPicker = false;
 			cir.setReturnValue(true);
+			return;
+		}
+		if (!edenmod$isChatEmoteAutocompleteEnabled()) {
+			edenmod$emoteSuggestions.clear();
+			edenmod$autocompletePool.clear();
 			return;
 		}
 		edenmod$refreshEmoteSuggestions();
@@ -157,6 +185,9 @@ public abstract class ChatScreenMixin {
 		}
 		int key = event.key();
 		if (key == GLFW.GLFW_KEY_TAB) {
+			if (edenmod$suggestionApplied) {
+				edenmod$selectedSuggestion = Math.floorMod(edenmod$selectedSuggestion + 1, edenmod$emoteSuggestions.size());
+			}
 			edenmod$applySuggestion(edenmod$selectedSuggestion);
 			cir.setReturnValue(true);
 			return;
@@ -164,24 +195,33 @@ public abstract class ChatScreenMixin {
 		if (key == GLFW.GLFW_KEY_UP) {
 			edenmod$selectedSuggestion = Math.floorMod(edenmod$selectedSuggestion - 1, edenmod$emoteSuggestions.size());
 			edenmod$ensureSuggestionVisible();
+			if (edenmod$suggestionApplied) {
+				edenmod$applySuggestion(edenmod$selectedSuggestion);
+			}
 			cir.setReturnValue(true);
 			return;
 		}
 		if (key == GLFW.GLFW_KEY_DOWN) {
 			edenmod$selectedSuggestion = Math.floorMod(edenmod$selectedSuggestion + 1, edenmod$emoteSuggestions.size());
 			edenmod$ensureSuggestionVisible();
+			if (edenmod$suggestionApplied) {
+				edenmod$applySuggestion(edenmod$selectedSuggestion);
+			}
 			cir.setReturnValue(true);
 		}
 	}
 
 	@Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
 	private void edenmod$handleChatOverlayClick(MouseButtonEvent event, boolean bl, CallbackInfoReturnable<Boolean> cir) {
-		if (!edenmod$isChatEmoteUiEnabled()) {
+		if (!edenmod$isChatEmoteUiVisible() && !edenmod$isChatEmoteAutocompleteEnabled()) {
 			edenmod$resetOverlayState();
 			return;
 		}
-		if (edenmod$handlePickerClick(event)) {
+		if (edenmod$isChatEmoteUiVisible() && edenmod$handlePickerClick(event)) {
 			cir.setReturnValue(true);
+			return;
+		}
+		if (!edenmod$isChatEmoteAutocompleteEnabled()) {
 			return;
 		}
 		edenmod$refreshEmoteSuggestions();
@@ -197,7 +237,7 @@ public abstract class ChatScreenMixin {
 
 	@Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
 	private void edenmod$handlePickerScroll(double mouseX, double mouseY, double dx, double dy, CallbackInfoReturnable<Boolean> cir) {
-		if (!edenmod$isChatEmoteUiEnabled()) {
+		if (!edenmod$isChatEmoteUiVisible()) {
 			edenmod$resetOverlayState();
 			return;
 		}
@@ -210,23 +250,38 @@ public abstract class ChatScreenMixin {
 
 	@Inject(method = "render", at = @At("TAIL"))
 	private void edenmod$renderChatOverlays(GuiGraphics graphics, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-		if (!edenmod$isChatEmoteUiEnabled()) {
+		if (!edenmod$isChatEmoteUiVisible() && !edenmod$isChatEmoteAutocompleteEnabled()) {
 			edenmod$resetOverlayState();
 			return;
 		}
-		Window window = Minecraft.getInstance().getWindow();
-		if (edenmod$draggingSlider != null && GLFW.glfwGetMouseButton(window.handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS) {
-			edenmod$commitSliderPreview();
-			edenmod$draggingSlider = null;
+		if (edenmod$isChatEmoteUiVisible()) {
+			edenmod$openCenteredPickerIfRequested();
+			Window window = Minecraft.getInstance().getWindow();
+			if (edenmod$draggingSlider != null && GLFW.glfwGetMouseButton(window.handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS) {
+				edenmod$commitSliderPreview();
+				edenmod$draggingSlider = null;
+			}
+			if (edenmod$draggingPicker && GLFW.glfwGetMouseButton(window.handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS) {
+				edenmod$commitCustomPickerPosition();
+				edenmod$draggingPicker = false;
+			}
+			if (edenmod$draggingSlider != null) {
+				edenmod$updateSliderFromMouse(edenmod$draggingSlider, mouseX);
+			}
+			if (edenmod$draggingPicker) {
+				edenmod$updatePickerDrag(mouseX, mouseY);
+			}
 		}
-		if (edenmod$draggingSlider != null) {
-			edenmod$updateSliderFromMouse(edenmod$draggingSlider, mouseX);
+		if (edenmod$isChatEmoteAutocompleteEnabled()) {
+			edenmod$refreshEmoteSuggestions();
+		} else {
+			edenmod$emoteSuggestions.clear();
+			edenmod$autocompletePool.clear();
 		}
-		edenmod$refreshEmoteSuggestions();
-		if (!edenmod$emoteSuggestions.isEmpty()) {
+		if (edenmod$showSuggestionOverlay && !edenmod$emoteSuggestions.isEmpty()) {
 			edenmod$renderSuggestions(graphics);
 		}
-		if (edenmod$pickerOpen) {
+		if (edenmod$isChatEmoteUiVisible() && edenmod$pickerOpen) {
 			edenmod$renderPicker(graphics, mouseX, mouseY);
 		}
 	}
@@ -237,22 +292,28 @@ public abstract class ChatScreenMixin {
 		edenmod$autocompletePool.clear();
 		edenmod$emoteTokenStart = -1;
 		edenmod$emoteTokenEnd = -1;
+		edenmod$showSuggestionOverlay = false;
 		String value = input.getValue();
 		if (value.startsWith("/")) {
+			edenmod$resetSuggestionSession();
 			return;
 		}
 		EmoteToken token = edenmod$findActiveEmoteToken(value, input.getCursorPosition());
+		if (token == null && edenmod$preserveSuggestionSeed) {
+			token = edenmod$findCompletedEmoteToken(value, input.getCursorPosition());
+		}
 		if (token == null) {
 			edenmod$resetSuggestionSession();
 			return;
 		}
 		String previousSeed = edenmod$suggestionSeed;
-		String query = token.query();
-		if (!token.query().equals(previousSeed)) {
+		boolean continuingAppliedCycle = edenmod$preserveSuggestionSeed && token.complete();
+		String query = continuingAppliedCycle ? previousSeed : token.query();
+		if (!continuingAppliedCycle && !query.equals(previousSeed)) {
 			edenmod$selectedSuggestion = 0;
 			edenmod$suggestionScroll = 0;
 		}
-		edenmod$suggestionSeed = token.query();
+		edenmod$suggestionSeed = query;
 		String lowered = query.toLowerCase(java.util.Locale.ROOT);
 		edenmod$autocompletePool.addAll(edenmod$autocompleteShortcodes());
 		List<String> prefixMatches = new ArrayList<>();
@@ -273,6 +334,9 @@ public abstract class ChatScreenMixin {
 		}
 		edenmod$emoteTokenStart = token.start();
 		edenmod$emoteTokenEnd = token.end();
+		edenmod$suggestionApplied = token.complete();
+		edenmod$showSuggestionOverlay = !token.complete() || continuingAppliedCycle;
+		edenmod$preserveSuggestionSeed = continuingAppliedCycle;
 		edenmod$selectedSuggestion = Math.max(0, Math.min(edenmod$selectedSuggestion, edenmod$emoteSuggestions.size() - 1));
 		edenmod$ensureSuggestionVisible();
 	}
@@ -304,7 +368,25 @@ public abstract class ChatScreenMixin {
 			return null;
 		}
 		String query = value.substring(startColon + 1, cursor);
-		return query.chars().allMatch(c -> edenmod$isEmoteNameChar((char) c)) ? new EmoteToken(startColon, tokenEnd, query) : null;
+		return query.chars().allMatch(c -> edenmod$isEmoteNameChar((char) c)) ? new EmoteToken(startColon, tokenEnd, query, false) : null;
+	}
+
+	@Unique
+	private EmoteToken edenmod$findCompletedEmoteToken(String value, int cursor) {
+		if (!edenmod$isCursorAfterCompleteToken(value, cursor)) {
+			return null;
+		}
+		int closingColon = cursor - 1;
+		int nameStart = closingColon;
+		while (nameStart > 0 && edenmod$isEmoteNameChar(value.charAt(nameStart - 1))) {
+			nameStart--;
+		}
+		int startColon = nameStart - 1;
+		if (startColon < 0 || value.charAt(startColon) != ':') {
+			return null;
+		}
+		String query = value.substring(nameStart, closingColon);
+		return query.isEmpty() ? null : new EmoteToken(startColon, closingColon + 1, query, true);
 	}
 
 	@Unique
@@ -345,7 +427,9 @@ public abstract class ChatScreenMixin {
 		String updated = value.substring(0, edenmod$emoteTokenStart) + suggestion + value.substring(edenmod$emoteTokenEnd);
 		input.setValue(updated);
 		input.setCursorPosition(edenmod$emoteTokenStart + suggestion.length());
-		edenmod$resetSuggestionSession();
+		edenmod$selectedSuggestion = index;
+		edenmod$suggestionApplied = true;
+		edenmod$preserveSuggestionSeed = true;
 		edenmod$refreshEmoteSuggestions();
 	}
 
@@ -398,14 +482,15 @@ public abstract class ChatScreenMixin {
 
 	@Unique
 	private boolean edenmod$handlePickerClick(MouseButtonEvent event) {
-		if (event.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+		if (EdenModClient.instance().matchesOpenEmotePickerMouse(event)) {
 			if (edenmod$pickerOpen) {
 				edenmod$pickerOpen = false;
 				edenmod$pickerSettingsOpen = false;
 				edenmod$draggingSlider = null;
+				edenmod$draggingPicker = false;
 				edenmod$clearSliderPreview();
 			} else {
-				edenmod$openPicker(event.x(), event.y());
+				edenmod$openPickerForMode(event.x(), event.y());
 			}
 			return true;
 		}
@@ -416,7 +501,14 @@ public abstract class ChatScreenMixin {
 			edenmod$pickerOpen = false;
 			edenmod$pickerSettingsOpen = false;
 			edenmod$draggingSlider = null;
+			edenmod$draggingPicker = false;
 			edenmod$clearSliderPreview();
+			return true;
+		}
+		if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && edenmod$canDragCustomPicker(event.x(), event.y())) {
+			edenmod$draggingPicker = true;
+			edenmod$pickerDragOffsetX = (int) event.x() - edenmod$pickerX;
+			edenmod$pickerDragOffsetY = (int) event.y() - edenmod$pickerY;
 			return true;
 		}
 		PickerHeaderAction headerAction = edenmod$pickerHeaderActionAt(event.x(), event.y());
@@ -436,7 +528,7 @@ public abstract class ChatScreenMixin {
 			return true;
 		}
 		String shortcode = visibleEntries.get(visibleIndex);
-		if (event.button() == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+		if (event.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
 			edenmod$toggleFavorite(shortcode);
 			return true;
 		}
@@ -467,8 +559,9 @@ public abstract class ChatScreenMixin {
 				edenmod$draggingSlider = SliderTarget.ROWS;
 				edenmod$updateSliderFromMouse(SliderTarget.ROWS, mouseX);
 			}
+			case CYCLE_OPEN_MODE -> edenmod$config().emotePickerOpenMode = edenmod$nextOpenMode(edenmod$config().emotePickerOpenMode);
 		}
-		if (action == PickerHeaderAction.FAVORITES || action == PickerHeaderAction.TOGGLE_SETTINGS || action == PickerHeaderAction.TOGGLE_AUTOCOMPLETE_FAVORITES) {
+		if (action == PickerHeaderAction.FAVORITES || action == PickerHeaderAction.TOGGLE_SETTINGS || action == PickerHeaderAction.TOGGLE_AUTOCOMPLETE_FAVORITES || action == PickerHeaderAction.CYCLE_OPEN_MODE) {
 			edenmod$config().save();
 			edenmod$pickerScrollRow = Math.min(edenmod$pickerScrollRow, edenmod$maxPickerScrollRows());
 			edenmod$clampPickerToWindow();
@@ -507,7 +600,7 @@ public abstract class ChatScreenMixin {
 			String empty = edenmod$pickerFavoritesOnly ? "No favorite emotes yet" : "No emotes loaded";
 			graphics.drawString(font, empty, edenmod$pickerGridX(), edenmod$pickerGridY() + 4, 0xFFAAAAAA);
 			if (edenmod$pickerFavoritesOnly) {
-				graphics.drawString(font, "Middle-click an emote", edenmod$pickerGridX(), edenmod$pickerGridY() + 32, 0xFF888888);
+				graphics.drawString(font, "Right-click an emote", edenmod$pickerGridX(), edenmod$pickerGridY() + 32, 0xFF888888);
 				graphics.drawString(font, "to add it here.", edenmod$pickerGridX(), edenmod$pickerGridY() + 44, 0xFF888888);
 			}
 		}
@@ -543,6 +636,8 @@ public abstract class ChatScreenMixin {
 		graphics.drawString(font, "Autocomplete", panelX + 8, panelY + 72, 0xFFE0E0E0);
 		String autoText = edenmod$config().autocompleteFavoriteEmotes ? "Favorites Only" : "All Emotes";
 		graphics.drawString(font, autoText, panelX + 8, panelY + 84, edenmod$config().autocompleteFavoriteEmotes ? 0xFFFFD75E : 0xFFB0B0B0);
+		graphics.drawString(font, "Open At", panelX + 8, panelY + 98, 0xFFE0E0E0);
+		graphics.drawString(font, edenmod$config().emotePickerOpenMode.label(), panelX + 8, panelY + 110, 0xFFFFD75E);
 	}
 
 	@Unique
@@ -568,6 +663,51 @@ public abstract class ChatScreenMixin {
 		edenmod$pickerX = (int) mouseX;
 		edenmod$pickerY = (int) mouseY;
 		edenmod$clampPickerToWindow();
+	}
+
+	@Unique
+	private void edenmod$openPickerForMode(double mouseX, double mouseY) {
+		BridgeConfig config = edenmod$config();
+		switch (config.emotePickerOpenMode) {
+			case CENTER -> {
+				Minecraft mc = Minecraft.getInstance();
+				double centerX = mc.getWindow().getGuiScaledWidth() / 2.0 - edenmod$pickerPanelWidth() / 2.0;
+				double centerY = mc.getWindow().getGuiScaledHeight() / 2.0 - edenmod$pickerPanelHeight() / 2.0;
+				edenmod$openPicker(centerX, centerY);
+			}
+			case CUSTOM -> {
+				if (config.emotePickerCustomX >= 0 && config.emotePickerCustomY >= 0) {
+					edenmod$openPicker(config.emotePickerCustomX, config.emotePickerCustomY);
+				} else {
+					Minecraft mc = Minecraft.getInstance();
+					double centerX = mc.getWindow().getGuiScaledWidth() / 2.0 - edenmod$pickerPanelWidth() / 2.0;
+					double centerY = mc.getWindow().getGuiScaledHeight() / 2.0 - edenmod$pickerPanelHeight() / 2.0;
+					edenmod$openPicker(centerX, centerY);
+				}
+			}
+			case CURSOR -> edenmod$openPicker(mouseX, mouseY);
+		}
+	}
+
+	@Unique
+	private void edenmod$openCenteredPickerIfRequested() {
+		if (!edenmod$isChatEmoteUiVisible() || !EdenModClient.instance().consumeCenteredEmotePickerRequest()) {
+			return;
+		}
+		double[] mouse = edenmod$currentMousePosition();
+		edenmod$openPickerForMode(mouse[0], mouse[1]);
+	}
+
+	@Unique
+	private double[] edenmod$currentMousePosition() {
+		Minecraft mc = Minecraft.getInstance();
+		Window window = mc.getWindow();
+		double[] rawX = new double[1];
+		double[] rawY = new double[1];
+		GLFW.glfwGetCursorPos(window.handle(), rawX, rawY);
+		double scaledX = rawX[0] * window.getGuiScaledWidth() / window.getWidth();
+		double scaledY = rawY[0] * window.getGuiScaledHeight() / window.getHeight();
+		return new double[] { scaledX, scaledY };
 	}
 
 	@Unique
@@ -659,6 +799,17 @@ public abstract class ChatScreenMixin {
 	}
 
 	@Unique
+	private boolean edenmod$canDragCustomPicker(double mouseX, double mouseY) {
+		if (edenmod$config().emotePickerOpenMode != BridgeConfig.EmotePickerOpenMode.CUSTOM) {
+			return false;
+		}
+		if (mouseY < edenmod$pickerY + 3 || mouseY > edenmod$pickerY + EDENMOD_PICKER_HEADER_HEIGHT - 2) {
+			return false;
+		}
+		return mouseX >= edenmod$pickerX + EDENMOD_PICKER_PADDING && mouseX < edenmod$wrenchButtonX() - 4;
+	}
+
+	@Unique
 	private int edenmod$displayedColumns() {
 		return edenmod$sliderPreviewColumns >= 0 ? edenmod$sliderPreviewColumns : edenmod$config().emotePickerColumns;
 	}
@@ -729,7 +880,16 @@ public abstract class ChatScreenMixin {
 		if (mouseY >= edenmod$settingsPanelY() + 80 && mouseY <= edenmod$settingsPanelY() + 92 && mouseX >= sliderX - 3 && mouseX <= sliderX + EDENMOD_SETTINGS_PANEL_WIDTH - 16) {
 			return PickerHeaderAction.TOGGLE_AUTOCOMPLETE_FAVORITES;
 		}
+		if (mouseY >= edenmod$settingsPanelY() + 106 && mouseY <= edenmod$settingsPanelY() + 118 && mouseX >= sliderX - 3 && mouseX <= sliderX + EDENMOD_SETTINGS_PANEL_WIDTH - 16) {
+			return PickerHeaderAction.CYCLE_OPEN_MODE;
+		}
 		return null;
+	}
+
+	@Unique
+	private BridgeConfig.EmotePickerOpenMode edenmod$nextOpenMode(BridgeConfig.EmotePickerOpenMode current) {
+		BridgeConfig.EmotePickerOpenMode[] values = BridgeConfig.EmotePickerOpenMode.values();
+		return values[(current.ordinal() + 1) % values.length];
 	}
 
 	@Unique
@@ -744,6 +904,13 @@ public abstract class ChatScreenMixin {
 		} else {
 			edenmod$sliderPreviewRows = value;
 		}
+	}
+
+	@Unique
+	private void edenmod$updatePickerDrag(double mouseX, double mouseY) {
+		edenmod$pickerX = (int) mouseX - edenmod$pickerDragOffsetX;
+		edenmod$pickerY = (int) mouseY - edenmod$pickerDragOffsetY;
+		edenmod$clampPickerToWindow();
 	}
 
 	@Unique
@@ -768,6 +935,17 @@ public abstract class ChatScreenMixin {
 	}
 
 	@Unique
+	private void edenmod$commitCustomPickerPosition() {
+		if (edenmod$config().emotePickerOpenMode != BridgeConfig.EmotePickerOpenMode.CUSTOM) {
+			return;
+		}
+		BridgeConfig config = edenmod$config();
+		config.emotePickerCustomX = edenmod$pickerX;
+		config.emotePickerCustomY = edenmod$pickerY;
+		config.save();
+	}
+
+	@Unique
 	private void edenmod$ensureSuggestionVisible() {
 		int maxScroll = Math.max(0, edenmod$emoteSuggestions.size() - EDENMOD_MAX_EMOTE_SUGGESTIONS);
 		if (edenmod$selectedSuggestion < edenmod$suggestionScroll) {
@@ -783,6 +961,9 @@ public abstract class ChatScreenMixin {
 		edenmod$selectedSuggestion = 0;
 		edenmod$suggestionScroll = 0;
 		edenmod$suggestionSeed = "";
+		edenmod$showSuggestionOverlay = false;
+		edenmod$suggestionApplied = false;
+		edenmod$preserveSuggestionSeed = false;
 	}
 
 	@Unique
@@ -790,6 +971,7 @@ public abstract class ChatScreenMixin {
 		edenmod$pickerOpen = false;
 		edenmod$pickerSettingsOpen = false;
 		edenmod$draggingSlider = null;
+		edenmod$draggingPicker = false;
 		edenmod$clearSliderPreview();
 		edenmod$emoteSuggestions.clear();
 		edenmod$autocompletePool.clear();
@@ -836,8 +1018,19 @@ public abstract class ChatScreenMixin {
 	}
 
 	@Unique
-	private boolean edenmod$isChatEmoteUiEnabled() {
-		return edenmod$config().chatEmoteUiEnabled;
+	private boolean edenmod$isChatEmoteUiVisible() {
+		return switch (edenmod$config().chatEmoteToolsMode) {
+			case UI, UI_AND_AUTO -> true;
+			case AUTO, NONE -> false;
+		};
+	}
+
+	@Unique
+	private boolean edenmod$isChatEmoteAutocompleteEnabled() {
+		return switch (edenmod$config().chatEmoteToolsMode) {
+			case AUTO, UI_AND_AUTO -> true;
+			case UI, NONE -> false;
+		};
 	}
 
 	@Unique
@@ -858,12 +1051,12 @@ public abstract class ChatScreenMixin {
 	}
 
 	@Unique
-	private record EmoteToken(int start, int end, String query) {
+	private record EmoteToken(int start, int end, String query, boolean complete) {
 	}
 
 	@Unique
 	private enum PickerHeaderAction {
-		FAVORITES, TOGGLE_SETTINGS, TOGGLE_AUTOCOMPLETE_FAVORITES, COLUMNS_SLIDER, ROWS_SLIDER
+		FAVORITES, TOGGLE_SETTINGS, TOGGLE_AUTOCOMPLETE_FAVORITES, COLUMNS_SLIDER, ROWS_SLIDER, CYCLE_OPEN_MODE
 	}
 
 	@Unique
