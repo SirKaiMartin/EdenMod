@@ -22,6 +22,6 @@ public final class Wynncraft {
 		if (colon >= 0) {
 			host = host.substring(0, colon);
 		}
-		return host.equals("wynncraft.com") || host.endsWith(".wynncraft.com");
+		return host.equals("wynncraft.com") || host.endsWith(".wynncraft.com") || host.equals("wynncraft.net") || host.endsWith(".wynncraft.net");
 	}
 }
