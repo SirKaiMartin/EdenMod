@@ -114,6 +114,12 @@ public final class BridgeConfig {
 	/** HUD chip showing your rolling 7-day war count (from the backend). */
 	public boolean warWeeklyCountHud = false;
 
+	/**
+	 * Run {@code /stream} automatically on entering a Wynncraft world. Off by default:
+	 * it changes what the server shows you, so it should be an opt-in.
+	 */
+	public boolean autoStream = false;
+
 	/** Make guild shouts clickable to pre-fill {@code /msg <shouter>}. */
 	public boolean shoutsClickable = true;
 

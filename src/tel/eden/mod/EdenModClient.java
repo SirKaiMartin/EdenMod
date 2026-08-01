@@ -1822,6 +1822,19 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	/** Called from the chat-capture mixin for every system-chat component. */
+	/**
+	 * Run Wynncraft's {@code /stream} for the auto-stream option.
+	 *
+	 * <p>Must be called on the client thread: the connection is owned there, while the
+	 * greeting that triggers this arrives on the netty thread.
+	 */
+	private static void sendStreamCommand() {
+		var connection = Minecraft.getInstance().getConnection();
+		if (connection != null) {
+			connection.sendCommand("stream");
+		}
+	}
+
 	public void handleSystemChat(Component message) {
 		// A real chat line breaks any in-progress Discord emblem block, so the next
 		// relayed Discord message starts with a fresh shield (like guild chat).
@@ -1837,6 +1850,12 @@ public final class EdenModClient implements ClientModInitializer {
 				WarTracker.onChat(warLine);
 				WarDPS.onChat(warLine);
 			});
+			// Auto /stream sits above the socket guard on purpose: it is a local
+			// convenience and has nothing to do with the bridge, so it keeps working
+			// while the backend is down or the player is unlinked.
+			if (config.autoStream && warLine.contains("Welcome to Wynncraft")) {
+				Minecraft.getInstance().execute(EdenModClient::sendStreamCommand);
+			}
 		}
 		BridgeWebSocketClient current = socket;
 		if (!onWynncraft || current == null) {
