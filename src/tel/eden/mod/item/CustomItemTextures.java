@@ -41,21 +41,27 @@ public final class CustomItemTextures {
 
 	private static final String NAMESPACE = "edenmod";
 
-	/** A rule with its name/lore regexes precompiled and its model id resolved once. */
-	private record Rule(List<Pattern> names, List<Pattern> lores, Identifier texture) {
+	/** A rule with its name/lore regexes precompiled, and its model id + label resolved once. */
+	private record Rule(List<Pattern> names, List<Pattern> lores, Identifier texture, String label) {
+	}
+
+	/** What a matched item renders as: a custom model, and the short slot label for it. */
+	private record Decision(Identifier model, String label) {
 	}
 
 	// Rules grouped by consumable type, built once at class load.
 	private static final Map<String, List<Rule>> RULES_BY_TYPE = compileRules();
 
 	// Sentinel meaning "scanned, matched nothing" in the decision cache (never set on a stack).
-	private static final Identifier NO_MATCH = Identifier.fromNamespaceAndPath(NAMESPACE, "no_match");
-	// Texture decision cached by the item's (name, lore) components: a bank full of identical
-	// items — and overlays that rebuild stacks each frame — resolve once, not per frame. Keyed
-	// by the components' own value equality (no hash-collision risk) and computable without
-	// flattening the lore to strings, so a cache hit skips that per-item work too.
+	private static final Decision NO_MATCH = new Decision(Identifier.fromNamespaceAndPath(NAMESPACE, "no_match"), "");
+	// Texture/label decision cached by the item's (name, lore) components: a bank full of
+	// identical items — and overlays that rebuild stacks each frame — resolve once, not per
+	// frame. Keyed by the components' own value equality (no hash-collision risk) and
+	// computable without flattening the lore to strings, so a cache hit skips that per-item
+	// work too. Both the model swap and the label read the same entry, so showing labels
+	// costs no extra scanning.
 	private static final int CACHE_LIMIT = 4096;
-	private static final Map<CacheKey, Identifier> DECISION_CACHE = new HashMap<>();
+	private static final Map<CacheKey, Decision> DECISION_CACHE = new HashMap<>();
 
 	/** Value-equality cache key: the item's name and lore components. */
 	private record CacheKey(Component name, ItemLore lore) {
@@ -72,7 +78,7 @@ public final class CustomItemTextures {
 			for (String regex : item.lores()) {
 				lores.add(Pattern.compile(regex));
 			}
-			byType.computeIfAbsent(item.type().toLowerCase(Locale.ROOT), key -> new ArrayList<>()).add(new Rule(names, lores, Identifier.fromNamespaceAndPath(NAMESPACE, item.texture())));
+			byType.computeIfAbsent(item.type().toLowerCase(Locale.ROOT), key -> new ArrayList<>()).add(new Rule(names, lores, Identifier.fromNamespaceAndPath(NAMESPACE, item.texture()), ConsumableLabels.forTexture(item.texture())));
 		}
 		return byType;
 	}
@@ -82,37 +88,70 @@ public final class CustomItemTextures {
 		if (!EdenModClient.instance().config().customItemTextures) {
 			return;
 		}
-		// Cheap gate first: skip anything already ours or not a base model we texture, so the
-		// vast majority of items exit before any lore work.
+		Decision decision = decisionFor(stack);
+		if (decision != null) {
+			stack.set(DataComponents.ITEM_MODEL, decision.model());
+		}
+	}
+
+	/**
+	 * The short slot label for a consumable ({@code "MR"}, {@code "SD"}, …), or null when
+	 * the item isn't one we recognise.
+	 *
+	 * <p>Once an item carries our model the texture name <em>is</em> the answer, so the
+	 * label comes straight off the model id — no cache key, and none of the
+	 * name/lore-component hashing that entails. That matters because this runs for every
+	 * slot every frame, and a bank page of textured consumables would otherwise pay that
+	 * hash twice per item (once here, once for the swap). The full scan below is only
+	 * reached before the swap lands, or when custom textures are switched off.
+	 */
+	public static String labelFor(ItemStack stack) {
+		Identifier model = stack.get(DataComponents.ITEM_MODEL);
+		if (model != null && model.getNamespace().equals(NAMESPACE)) {
+			// NO_MATCH is never written onto a stack, but it shares the namespace, so it is
+			// excluded here rather than relying on that staying true.
+			String texture = model.getPath();
+			return texture.equals(NO_MATCH.model().getPath()) ? null : emptyToNull(ConsumableLabels.forTexture(texture));
+		}
+		Decision decision = decisionFor(stack);
+		return decision == null ? null : emptyToNull(decision.label());
+	}
+
+	private static String emptyToNull(String label) {
+		return label == null || label.isEmpty() ? null : label;
+	}
+
+	/**
+	 * The cached texture/label decision for a stack, or null when it isn't a consumable we
+	 * texture. Render thread only — {@link #DECISION_CACHE} is deliberately unsynchronised.
+	 */
+	private static Decision decisionFor(ItemStack stack) {
+		// Cheap gate first: skip anything that isn't a base model we texture (or one we
+		// already swapped), so the vast majority of items exit before any lore work.
 		if (Minecraft.getInstance().player == null || !isEligible(stack)) {
-			return;
+			return null;
 		}
 		// Key off the components directly (cheap, no string flattening) and check the cache
 		// before doing any lore/name string work.
 		ItemLore loreComponent = stack.get(DataComponents.LORE);
 		CacheKey key = new CacheKey(stack.getHoverName(), loreComponent == null ? ItemLore.EMPTY : loreComponent);
-		Identifier cached = DECISION_CACHE.get(key);
+		Decision cached = DECISION_CACHE.get(key);
 		if (cached != null) {
-			if (cached != NO_MATCH) {
-				stack.set(DataComponents.ITEM_MODEL, cached);
-			}
-			return;
+			return cached == NO_MATCH ? null : cached;
 		}
 		// Cache miss: now pay for flattening the lore to strings and scanning the rules.
 		String name = stack.getHoverName().getString();
 		List<String> lore = loreStrings(stack);
-		Identifier match = name.equals("Air") ? null : resolve(stack, name, lore);
+		Decision match = name.equals("Air") ? null : resolve(stack, name, lore);
 		if (DECISION_CACHE.size() >= CACHE_LIMIT) {
 			DECISION_CACHE.clear();
 		}
 		DECISION_CACHE.put(key, match == null ? NO_MATCH : match);
-		if (match != null) {
-			stack.set(DataComponents.ITEM_MODEL, match);
-		}
+		return match;
 	}
 
-	/** Full rule scan for an item (only on a cache miss). Returns the model id or null. */
-	private static Identifier resolve(ItemStack stack, String name, List<String> lore) {
+	/** Full rule scan for an item (only on a cache miss). Returns the decision or null. */
+	private static Decision resolve(ItemStack stack, String name, List<String> lore) {
 		String type = itemType(stack, lore);
 		if (type == null) {
 			return null;
@@ -123,7 +162,7 @@ public final class CustomItemTextures {
 		}
 		for (Rule rule : rules) {
 			if (nameMatches(rule.names(), name) && loreMatches(rule.lores(), lore)) {
-				return rule.texture();
+				return new Decision(rule.texture(), rule.label());
 			}
 		}
 		return null;
@@ -132,7 +171,8 @@ public final class CustomItemTextures {
 	/**
 	 * Cheap gate: only base models we texture (crafted food renders as a diamond axe,
 	 * potions as a potion, and splash potions) are eligible, and anything already swapped to
-	 * our namespace is skipped.
+	 * our namespace is skipped — its model is settled, and {@link #labelFor} reads such
+	 * items straight off the model id without coming through here.
 	 */
 	private static boolean isEligible(ItemStack itemStack) {
 		Identifier model = itemStack.get(DataComponents.ITEM_MODEL);

@@ -10,6 +10,7 @@
     "ClientPacketListenerMixin",
     "ConnectionScoreboardMixin",
     "GuiGraphicsMixin",
+    "ItemDecorationMixin",
     "ItemRenderMixin",
     "TitleScreenMixin"
   ],

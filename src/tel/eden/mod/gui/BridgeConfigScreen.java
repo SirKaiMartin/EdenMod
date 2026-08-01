@@ -116,7 +116,8 @@ public final class BridgeConfigScreen extends Screen {
 			config.congratsMessage = "Congrats!";
 			congratsBox.setValue("Congrats!");
 		});
-		addToggleRow("Custom item textures", () -> config.customItemTextures, v -> config.customItemTextures = v, "On", "Off", false);
+		addToggleRow("Custom item textures", () -> config.customItemTextures, v -> config.customItemTextures = v, "On", "Off", true);
+		addToggleRow("Consumable labels", () -> config.consumableLabels, v -> config.consumableLabels = v, "On", "Off", true);
 		addToggleRow("Emote wheel", () -> config.emoteWheelEnabled, v -> config.emoteWheelEnabled = v, "On", "Off", true);
 		addButtonRow("Emote wheel favorites", () -> Component.literal("Edit..."), () -> this.minecraft.setScreen(new tel.eden.mod.emote.EmoteConfigScreen(this, config)), () -> {
 		});

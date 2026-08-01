@@ -139,6 +139,21 @@ public final class BridgeConfig {
 	 */
 	public boolean customItemTextures = true;
 
+	/**
+	 * Draw a short stat label ("MR", "SD", "+ATK") over crafted consumables in slots, so a
+	 * bank page can be read at a glance. Independent of {@link #customItemTextures} — the
+	 * two share the same rule match, but either can be shown without the other.
+	 */
+	public boolean consumableLabels = true;
+
+	/** Label text scale; 1.0 is the same size as the stack-count number. */
+	public float consumableLabelScale = 0.75f;
+
+	/** Label offset from the slot's top-left corner, in (unscaled) pixels. */
+	public int consumableLabelOffsetX = 0;
+
+	public int consumableLabelOffsetY = 0;
+
 	/** Radial emote wheel (hold the keybind) for playing Wynncraft {@code /emote} animations. */
 	public boolean emoteWheelEnabled = true;
 
@@ -297,6 +312,12 @@ public final class BridgeConfig {
 					config.emotePickerRows = Math.max(1, Math.min(10, config.emotePickerRows));
 					config.warAttackTimerMaxRows = Math.max(1, Math.min(50, config.warAttackTimerMaxRows));
 					config.imagePreviewSize = Math.max(1, Math.min(100, config.imagePreviewSize));
+					// The label scale divides the draw position, so a hand-edited 0 would put
+					// the text at an infinite coordinate; the offsets are bounded to keep a
+					// typo from parking a label off-screen with no GUI control to undo it.
+					config.consumableLabelScale = Math.max(0.25f, Math.min(2.0f, config.consumableLabelScale));
+					config.consumableLabelOffsetX = Math.max(-64, Math.min(64, config.consumableLabelOffsetX));
+					config.consumableLabelOffsetY = Math.max(-64, Math.min(64, config.consumableLabelOffsetY));
 					return config;
 				}
 			} catch (IOException | RuntimeException e) {
