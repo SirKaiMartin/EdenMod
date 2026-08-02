@@ -163,3 +163,86 @@ spotless {
         eclipse().configFile('eclipse-formatter.xml')
     }
 }
+
+// ── Fulcio cert management ────────────────────────────────────────────────────
+//
+// Only the root cert is committed (fulcio_root.b64 — Internal Services Root,
+// expires 2033-08-04). Intermediate certs (l1, l2) are fetched at runtime from
+// fulcio.githubapp.com/api/v2/trustBundle, verified against this root, and cached
+// in the user's edenmod/ directory. This avoids CI maintenance when intermediates
+// rotate (l2 rotates annually).
+//
+// Both tasks fetch directly from fulcio.githubapp.com — no gh CLI required.
+// The API returns PEM-encoded certs; tasks convert to base64 DER for storage.
+//
+// updateFulcioCert: pull the current root cert and update fulcio_root.b64.
+//   Warns and logs details if the root has changed (significant trust event).
+//
+// checkFulcioCert: fail CI if the committed root cert expires within 180 days
+//   or has drifted from what fulcio.githubapp.com returns.
+
+def FULCIO_TRUST_BUNDLE_URL = 'https://fulcio.githubapp.com/api/v2/trustBundle'
+
+def fetchFulcioRootCert = {
+    def response = new groovy.json.JsonSlurper().parseText(new URL(FULCIO_TRUST_BUNDLE_URL).text)
+    def chains = response.chains
+    if (!chains || chains.isEmpty()) throw new GradleException('No chains in Fulcio trust bundle response')
+    def pemCerts = chains[0].certificates
+    if (!pemCerts || pemCerts.size() < 3) throw new GradleException("Expected at least 3 certs in chain, got ${pemCerts?.size()}")
+    // pemCerts[0]=l2, pemCerts[1]=l1, pemCerts[2]=root
+    def cf = java.security.cert.CertificateFactory.getInstance('X.509')
+    def rootCert = cf.generateCertificate(new java.io.ByteArrayInputStream(pemCerts[2].bytes))
+    return [cert: rootCert, b64: java.util.Base64.getEncoder().encodeToString(rootCert.encoded)]
+}
+
+tasks.register('updateFulcioCert') {
+    group = 'edenmod'
+    description = 'Pull the current Fulcio root cert from fulcio.githubapp.com and update fulcio_root.b64.'
+    doLast {
+        def live = fetchFulcioRootCert()
+        def committedB64 = file('resources/fulcio_root.b64').text.trim()
+        def cf = java.security.cert.CertificateFactory.getInstance('X.509')
+        if (committedB64 == live.b64) {
+            logger.lifecycle("EdenMod: fulcio_root.b64 is already up to date (expires ${live.cert.notAfter})")
+            return
+        }
+        // Root changed — significant trust event; log before updating.
+        def oldCert = cf.generateCertificate(new java.io.ByteArrayInputStream(java.util.Base64.getDecoder().decode(committedB64)))
+        logger.lifecycle("EdenMod: WARNING — Fulcio root cert changed!")
+        logger.lifecycle("  Old: subject=${oldCert.subjectX500Principal}, expires=${oldCert.notAfter}")
+        logger.lifecycle("  New: subject=${live.cert.subjectX500Principal}, expires=${live.cert.notAfter}")
+        file('resources/fulcio_root.b64').text = live.b64 + '\n'
+        logger.lifecycle("EdenMod: fulcio_root.b64 updated.")
+    }
+}
+
+tasks.register('checkFulcioCert') {
+    group = 'edenmod'
+    description = 'Fail the build if the committed Fulcio root cert is expiring soon or has drifted from fulcio.githubapp.com.'
+    doLast {
+        def cf = java.security.cert.CertificateFactory.getInstance('X.509')
+        def certFile = file('resources/fulcio_root.b64')
+        if (!certFile.exists()) throw new GradleException("fulcio_root.b64 is missing — run ./gradlew updateFulcioCert")
+        def cert = cf.generateCertificate(new java.io.ByteArrayInputStream(java.util.Base64.getDecoder().decode(certFile.text.trim())))
+        long daysLeft = (cert.notAfter.time - System.currentTimeMillis()) / 86_400_000L
+        if (daysLeft < 0) {
+            throw new GradleException("Committed Fulcio root cert has EXPIRED (${cert.notAfter}) — run ./gradlew updateFulcioCert")
+        }
+        if (daysLeft < 180) {
+            throw new GradleException("Committed Fulcio root cert expires in ${daysLeft} days (${cert.notAfter}) — run ./gradlew updateFulcioCert")
+        }
+        logger.lifecycle("EdenMod: Fulcio root cert OK (expires ${cert.notAfter}, ${daysLeft} days left)")
+        // Drift check against live Fulcio trust bundle.
+        try {
+            def live = fetchFulcioRootCert()
+            if (live.b64 != certFile.text.trim()) {
+                throw new GradleException("Committed Fulcio root cert has DRIFTED from ${FULCIO_TRUST_BUNDLE_URL} — run ./gradlew updateFulcioCert")
+            }
+            logger.lifecycle("EdenMod: Fulcio root cert matches live trust bundle")
+        } catch (GradleException e) {
+            throw e
+        } catch (Exception e) {
+            logger.warn("EdenMod: drift check failed (${e.message}) — skipping")
+        }
+    }
+}

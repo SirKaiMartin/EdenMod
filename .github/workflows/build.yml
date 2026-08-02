@@ -28,6 +28,11 @@ jobs:
       - name: Check formatting
         run: ./gradlew spotlessCheck --no-daemon
 
+      - name: Check Fulcio cert freshness
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./gradlew checkFulcioCert --no-daemon
+
       - name: Build
         run: ./gradlew build --no-daemon --stacktrace
 
@@ -60,7 +65,15 @@ jobs:
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
           echo "ver=$v" >> "$GITHUB_OUTPUT"
           echo "mc=$mc" >> "$GITHUB_OUTPUT"
-          echo "Mod version: $v  MC: $mc"
+          # Versions containing -alpha, -beta, or -rc (optionally followed by digits)
+          # are treated as pre-releases: the GitHub Release is marked pre-release and
+          # Modrinth gets the appropriate version-type instead of "release".
+          if echo "$v" | grep -qiE '\-(alpha|beta|rc)[0-9]*$'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Mod version: $v  MC: $mc  Pre-release: $(echo "$v" | grep -qiE '\-(alpha|beta|rc)' && echo yes || echo no)"
 
       - name: Check whether the release already exists
         id: release
@@ -84,9 +97,10 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           files: ${{ steps.jar.outputs.path }}
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease }}
 
       - name: Publish to Modrinth
-        if: github.ref == 'refs/heads/master' && (steps.release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch')
+        if: github.ref == 'refs/heads/master' && steps.release.outputs.exists == 'false' && steps.version.outputs.prerelease == 'false'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}

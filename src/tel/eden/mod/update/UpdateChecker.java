@@ -28,6 +28,14 @@ public final class UpdateChecker {
 
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
 
+	/**
+	 * Days until the embedded Fulcio root cert expires. Negative when already expired.
+	 * Exposes the package-private {@link FulcioTrust} check to callers in other packages.
+	 */
+	public static long fulcioCertDaysLeft() {
+		return FulcioTrust.rootDaysUntilExpiry();
+	}
+
 	/** The installed mod version (e.g. {@code "1.0.3"}), or null if unknown. */
 	public static String currentVersion() {
 		return FabricLoader.getInstance().getModContainer(MOD_ID).map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse(null);
@@ -87,20 +95,33 @@ public final class UpdateChecker {
 		String[] pb = b.split("\\.");
 		int parts = Math.max(pa.length, pb.length);
 		for (int i = 0; i < parts; i++) {
-			int x = i < pa.length ? numericPrefix(pa[i]) : 0;
-			int y = i < pb.length ? numericPrefix(pb[i]) : 0;
+			String sa = i < pa.length ? pa[i] : "0";
+			String sb = i < pb.length ? pb[i] : "0";
+			int x = numericPrefix(sa);
+			int y = numericPrefix(sb);
 			if (x != y) {
 				return Integer.compare(x, y);
+			}
+			// Same number: a pre-release suffix (e.g. "-beta") is older than no suffix.
+			// "1" > "1-beta", so releasing 1.4.1 after 1.4.1-beta triggers the prompt.
+			boolean xSuffix = sa.length() > numericPrefixEnd(sa);
+			boolean ySuffix = sb.length() > numericPrefixEnd(sb);
+			if (xSuffix != ySuffix) {
+				return xSuffix ? -1 : 1;
 			}
 		}
 		return 0;
 	}
 
 	private static int numericPrefix(String s) {
+		return numericPrefixEnd(s) == 0 ? 0 : Integer.parseInt(s.substring(0, numericPrefixEnd(s)));
+	}
+
+	private static int numericPrefixEnd(String s) {
 		int end = 0;
 		while (end < s.length() && Character.isDigit(s.charAt(end))) {
 			end++;
 		}
-		return end == 0 ? 0 : Integer.parseInt(s.substring(0, end));
+		return end;
 	}
 }

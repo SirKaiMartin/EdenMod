@@ -214,6 +214,16 @@ public final class EdenModClient implements ClientModInitializer {
 	private volatile boolean updateChecked;
 	private volatile boolean updateStaged;
 	private volatile boolean pendingUpdateNotification;
+	// Set when the Fulcio root cert has actually expired; updates fall back to hash-only
+	// and the player should update the mod as soon as possible.
+	private volatile boolean pendingFulcioCertExpiredWarning;
+	// Set when a mod update is available and the cert expires within 90 days; the 180-day
+	// CI alarm gives plenty of runway, but we also warn in-game so players who auto-update
+	// don't let the cert silently expire on versions that aren't built yet.
+	private volatile boolean pendingFulcioCertExpiringSoonWarning;
+	// Set when boot-time attestation fails — jar hash has no GitHub attestation, which
+	// means the jar is either unofficial or has been tampered with.
+	private volatile boolean pendingBootAttestationFailed;
 	private volatile boolean pendingCenteredEmotePicker;
 	// Non-null when the bridge rejected our connection; holds the error code
 	// ("version_rejected", "not_member", "http_401", etc.) so onClientTick can
@@ -444,6 +454,14 @@ public final class EdenModClient implements ClientModInitializer {
 			})));
 		});
 
+		Thread bootVerify = new Thread(() -> {
+			if (!updateInstaller.verifyBootAttestation()) {
+				pendingBootAttestationFailed = true;
+			}
+		}, "edenmod-boot-verify");
+		bootVerify.setDaemon(true);
+		bootVerify.start();
+
 		LOGGER.info("EdenMod initialised");
 	}
 
@@ -509,6 +527,19 @@ public final class EdenModClient implements ClientModInitializer {
 			if (update != null) {
 				display(() -> DiscordChatFormatter.updateAvailable(update.version(), update.pageUrl()));
 			}
+		}
+		if (pendingFulcioCertExpiredWarning && client.player != null) {
+			pendingFulcioCertExpiredWarning = false;
+			display(() -> Component.empty().append(Component.literal("[EdenMod] ").withStyle(ChatFormatting.RED)).append(Component.literal("CRITICAL: ").withStyle(Style.EMPTY.withColor(ChatFormatting.RED).withBold(true))).append(Component.literal("The update verification cert has expired — mod updates are no longer fully verified. " + "Please update EdenMod immediately!").withStyle(ChatFormatting.RED)));
+		}
+		if (pendingFulcioCertExpiringSoonWarning && client.player != null) {
+			pendingFulcioCertExpiringSoonWarning = false;
+			long d = UpdateChecker.fulcioCertDaysLeft();
+			display(() -> Component.literal("[EdenMod] WARNING: The update verification cert expires in " + d + " days — " + "run /eden update to upgrade EdenMod before Sigstore verification is lost.").withStyle(ChatFormatting.RED));
+		}
+		if (pendingBootAttestationFailed && client.player != null) {
+			pendingBootAttestationFailed = false;
+			display(() -> Component.empty().append(Component.literal("[EdenMod] ").withStyle(ChatFormatting.RED)).append(Component.literal("WARNING: ").withStyle(Style.EMPTY.withColor(ChatFormatting.RED).withBold(true))).append(Component.literal("This mod jar could not be verified against any official EdenMod release — it may have been tampered with. Reinstall EdenMod from the official releases.").withStyle(ChatFormatting.RED)));
 		}
 		String connCode = pendingConnectionCode;
 		if (connCode != null && client.player != null) {
@@ -782,10 +813,24 @@ public final class EdenModClient implements ClientModInitializer {
 			return;
 		}
 		updateChecked = true;
-		Thread thread = new Thread(() -> updateChecker.check().ifPresent(update -> {
-			pendingUpdate = update;
-			pendingUpdateNotification = true;
-		}), "edenmod-update-check");
+		Thread thread = new Thread(() -> {
+			// Cert expiry is local — check it first, before any network call.
+			long certDaysLeft = UpdateChecker.fulcioCertDaysLeft();
+			boolean certExpired = certDaysLeft < 0;
+			if (certExpired) {
+				pendingFulcioCertExpiredWarning = true;
+			}
+			updateChecker.check().ifPresent(update -> {
+				pendingUpdate = update;
+				pendingUpdateNotification = true;
+				// Warn if the cert is about to expire but not yet expired — this update
+				// will carry a fresh cert, so nudging the player to update now preserves
+				// full Sigstore verification for the next update cycle.
+				if (!certExpired && certDaysLeft < 90) {
+					pendingFulcioCertExpiringSoonWarning = true;
+				}
+			});
+		}, "edenmod-update-check");
 		thread.setDaemon(true);
 		thread.start();
 	}
