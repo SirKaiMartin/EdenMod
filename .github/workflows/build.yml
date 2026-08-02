@@ -91,13 +91,19 @@ jobs:
 
       - name: Publish release
         if: github.ref == 'refs/heads/master' && steps.release.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
-          files: ${{ steps.jar.outputs.path }}
-          generate_release_notes: true
-          prerelease: ${{ steps.version.outputs.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes \
+            $PRERELEASE_FLAG \
+            "${{ steps.jar.outputs.path }}"
 
       - name: Publish to Modrinth
         if: github.ref == 'refs/heads/master' && steps.release.outputs.exists == 'false' && steps.version.outputs.prerelease == 'false'
