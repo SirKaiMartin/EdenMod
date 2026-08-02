@@ -13,11 +13,10 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 public class ImagePreviewManager {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 
 	static {
 		// ImageIO finds plugins via ServiceLoader on the *system* classloader, but

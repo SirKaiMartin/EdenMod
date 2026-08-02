@@ -1,8 +1,7 @@
 package tel.eden.mod.util;
 
 import net.minecraft.network.chat.Component;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Optional integration with Wynntils chat tabs. If Wynntils is loaded and chat
@@ -11,7 +10,7 @@ import org.slf4j.LoggerFactory;
  * chat if Wynntils is unavailable or disabled.
  */
 public final class WynntilsChatBridge {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 
 	private static final String WYNNTILS_CHAT_TAB_SERVICE = "com.wynntils.services.chat.ChatTabService";
 	private static final String WYNNTILS_SERVICES = "com.wynntils.core.components.Services";
@@ -72,15 +71,15 @@ public final class WynntilsChatBridge {
 			chatTabServiceClass = Class.forName(WYNNTILS_CHAT_TAB_SERVICE);
 			chatTabField = servicesClass.getField("ChatTab");
 			classesLoaded = true;
-			LOGGER.info("[EdenMod] Wynntils classes loaded - bridge messages will route to chat tabs");
+			LOGGER.info("Wynntils classes loaded - bridge messages will route to chat tabs");
 			return true;
 		} catch (ClassNotFoundException e) {
 			classesLoaded = true; // Mark as loaded so we don't keep trying
-			LOGGER.debug("[EdenMod] Wynntils not available");
+			LOGGER.debug("Wynntils not available");
 			return false;
 		} catch (Exception e) {
 			classesLoaded = true; // Mark as loaded so we don't keep trying
-			LOGGER.warn("[EdenMod] Failed to load Wynntils classes for chat bridge", e);
+			LOGGER.warn("Failed to load Wynntils classes for chat bridge", e);
 			return false;
 		}
 	}

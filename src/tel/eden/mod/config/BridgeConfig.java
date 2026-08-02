@@ -11,8 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.fabricmc.loader.api.FabricLoader;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Persisted client configuration, stored at {@code config/edenmod.json}.
@@ -24,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * backend in the {@code authOk} frame.
  */
 public final class BridgeConfig {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("edenmod.json");
 

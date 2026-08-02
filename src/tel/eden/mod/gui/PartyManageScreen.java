@@ -302,14 +302,21 @@ public final class PartyManageScreen extends EdenReferenceScreen {
 	}
 
 	private void fetchHead(String member) {
-		try (java.io.InputStream stream = new java.net.URL("https://minotar.net/helm/" + member + "/12.png").openStream()) {
-			var img = NativeImage.read(stream);
-			Minecraft.getInstance().execute(() -> {
-				Identifier loc = Identifier.parse("edenmod:head/" + member.toLowerCase());
-				var texture = new DynamicTexture(() -> member, img);
-				Minecraft.getInstance().getTextureManager().register(loc, texture);
-				headCache.put(member, loc);
-			});
+		if (!member.matches("[A-Za-z0-9_]{1,16}"))
+			return;
+		try {
+			java.net.URLConnection conn = new java.net.URL("https://minotar.net/helm/" + member + "/12.png").openConnection();
+			conn.setConnectTimeout(5_000);
+			conn.setReadTimeout(5_000);
+			try (java.io.InputStream stream = conn.getInputStream()) {
+				var img = NativeImage.read(stream);
+				Minecraft.getInstance().execute(() -> {
+					Identifier loc = Identifier.parse("edenmod:head/" + member.toLowerCase());
+					var texture = new DynamicTexture(() -> member, img);
+					Minecraft.getInstance().getTextureManager().register(loc, texture);
+					headCache.put(member, loc);
+				});
+			}
 		} catch (Exception e) {
 			// Silently fail if head cannot be fetched
 		}

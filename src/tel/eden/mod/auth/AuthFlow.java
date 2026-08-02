@@ -12,8 +12,7 @@ import java.time.Duration;
 import java.util.Base64;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.Util;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Drives the browser link flow: {@code POST /auth/start} -> open the authorization
@@ -23,7 +22,7 @@ import org.slf4j.LoggerFactory;
  * <p>Runs on a daemon thread so the game is never blocked.
  */
 public final class AuthFlow {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final String MOD_VERSION = FabricLoader.getInstance().getModContainer("edenmod").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
 	private static final int POLL_ATTEMPTS = 150; // 150 * 2s = 5 minutes
 	private static final long POLL_INTERVAL_MS = 2000L;

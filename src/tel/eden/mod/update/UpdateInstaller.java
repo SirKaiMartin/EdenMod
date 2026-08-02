@@ -1,19 +1,25 @@
 package tel.eden.mod.update;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.Locale;
 import net.fabricmc.loader.api.FabricLoader;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Downloads a newer EdenMod jar and swaps it in when the game closes.
@@ -35,9 +41,10 @@ import org.slf4j.LoggerFactory;
  * leaves the mods folder with two EdenMod jars.
  */
 public final class UpdateInstaller {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final String MOD_ID = "edenmod";
 	private static final int HTTP_OK = 200;
+	private static final String ATTESTATION_API = "https://api.github.com/repos/EdenGuild/EdenMod/attestations/sha256:";
 
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
 
@@ -66,6 +73,11 @@ public final class UpdateInstaller {
 			if (!Files.isRegularFile(staged) || Files.size(staged) <= 0) {
 				return Result.FAILED;
 			}
+			if (!verifyAttestation(staged, info.version())) {
+				Files.deleteIfExists(staged);
+				return Result.FAILED;
+			}
+			LOGGER.info("Update edenmod-{}.jar staged; will apply when the game closes", info.version());
 			Path newJar = oldJar.getParent().resolve("edenmod-" + info.version() + ".jar");
 			// The swap helper runs from a copy of the current jar, which is guaranteed
 			// to contain UpdateApplier and is neither the (deletable) old jar nor the
@@ -77,6 +89,76 @@ public final class UpdateInstaller {
 		} catch (IOException | RuntimeException e) {
 			LOGGER.warn("Update download/stage failed", e);
 			return Result.FAILED;
+		}
+	}
+
+	/**
+	 * Verifies the downloaded jar against GitHub's artifact attestation API.
+	 *
+	 * <p>Computes the SHA-256 of the staged jar, then queries the GitHub attestation
+	 * endpoint to confirm the jar was built by GitHub Actions from the EdenGuild/EdenMod
+	 * repo. The DSSE payload is parsed to verify the attested subject hash matches the
+	 * file we actually downloaded, and that the predicate references the correct repo.
+	 * Full Sigstore certificate-chain verification is not performed — we trust GitHub's
+	 * HTTPS API, which is the same trust boundary as downloading the release itself.
+	 */
+	private boolean verifyAttestation(Path jar, String version) {
+		try {
+			byte[] bytes = Files.readAllBytes(jar);
+			String hex = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+
+			HttpResponse<String> resp = http.send(HttpRequest.newBuilder(URI.create(ATTESTATION_API + hex)).header("Accept", "application/vnd.github+json").header("X-GitHub-Api-Version", "2022-11-28").header("User-Agent", "EdenMod-updater").timeout(Duration.ofSeconds(15)).GET().build(), HttpResponse.BodyHandlers.ofString());
+
+			if (resp.statusCode() != HTTP_OK) {
+				LOGGER.warn("Attestation API returned HTTP {} for edenmod-{}.jar", resp.statusCode(), version);
+				return false;
+			}
+
+			JsonObject body = JsonParser.parseString(resp.body()).getAsJsonObject();
+			JsonArray attestations = body.has("attestations") ? body.getAsJsonArray("attestations") : null;
+			if (attestations == null || attestations.isEmpty()) {
+				LOGGER.warn("No attestation found for edenmod-{}.jar (sha256={})", version, hex);
+				return false;
+			}
+
+			// Decode the DSSE payload from the first attestation to verify the subject hash
+			// and that the predicate references the correct repo.
+			JsonObject bundle = attestations.get(0).getAsJsonObject().getAsJsonObject("bundle");
+			String payloadB64 = bundle.getAsJsonObject("dsseEnvelope").get("payload").getAsString();
+			String statement = new String(Base64.getDecoder().decode(payloadB64), StandardCharsets.UTF_8);
+			JsonObject stmt = JsonParser.parseString(statement).getAsJsonObject();
+
+			boolean hashMatched = false;
+			if (stmt.has("subject") && stmt.get("subject").isJsonArray()) {
+				for (var el : stmt.getAsJsonArray("subject")) {
+					JsonObject digest = el.getAsJsonObject().getAsJsonObject("digest");
+					if (digest != null && hex.equalsIgnoreCase(digest.has("sha256") ? digest.get("sha256").getAsString() : "")) {
+						hashMatched = true;
+						break;
+					}
+				}
+			}
+			if (!hashMatched) {
+				LOGGER.warn("Attestation subject hash mismatch for edenmod-{}.jar (expected sha256={})", version, hex);
+				return false;
+			}
+
+			// Confirm the statement references the correct repo (case-insensitive substring check
+			// on the full statement JSON — works across all current GitHub predicate formats).
+			if (!statement.toLowerCase(Locale.ROOT).contains("edenguild/edenmod")) {
+				LOGGER.warn("Attestation predicate does not reference EdenGuild/EdenMod for edenmod-{}.jar", version);
+				return false;
+			}
+
+			LOGGER.info("Attestation verified for edenmod-{}.jar (sha256={})", version, hex);
+			return true;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			LOGGER.warn("Attestation check interrupted for edenmod-{}.jar", version);
+			return false;
+		} catch (Exception e) {
+			LOGGER.warn("Attestation check failed for edenmod-{}.jar", version, e);
+			return false;
 		}
 	}
 

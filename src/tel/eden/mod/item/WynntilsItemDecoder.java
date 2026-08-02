@@ -9,8 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import net.fabricmc.loader.api.FabricLoader;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Decodes a Wynntils item-sharing string into a {@link DecodedItem} by calling
@@ -23,7 +22,7 @@ import org.slf4j.LoggerFactory;
  * and logs, and the feature simply no-ops when Wynntils is absent or its API moved.
  */
 public final class WynntilsItemDecoder {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 
 	private WynntilsItemDecoder() {
 	}

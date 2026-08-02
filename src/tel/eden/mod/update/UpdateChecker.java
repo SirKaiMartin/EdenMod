@@ -10,8 +10,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Optional;
 import net.fabricmc.loader.api.FabricLoader;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Checks the EdenMod GitHub repo for a release newer than the installed version.
@@ -22,7 +21,7 @@ import org.slf4j.LoggerFactory;
  * a checker hiccup never disrupts play.
  */
 public final class UpdateChecker {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final String MOD_ID = "edenmod";
 	private static final String LATEST_RELEASE_API = "https://api.github.com/repos/EdenGuild/EdenMod/releases/latest";
 	private static final int HTTP_OK = 200;

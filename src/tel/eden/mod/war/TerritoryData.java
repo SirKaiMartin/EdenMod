@@ -17,8 +17,7 @@ import net.minecraft.advancements.AdvancementNode;
 import net.minecraft.advancements.DisplayInfo;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Live territory reference data for the war suite.
@@ -35,7 +34,7 @@ public final class TerritoryData {
 	private TerritoryData() {
 	}
 
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final String TERRITORY_API = "https://api.wynncraft.com/v3/guild/list/territory";
 	private static final int HTTP_OK = 200;
 	private static final long API_REFRESH_MS = 10 * 60 * 1000L;

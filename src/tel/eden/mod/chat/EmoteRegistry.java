@@ -11,8 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.resources.Identifier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Resolves {@code :shortcode:} tokens in relayed Discord messages to the
@@ -28,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * directories and rebuild; nothing in this class needs to change.
  */
 public final class EmoteRegistry {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final String MANIFEST_PATH = "/assets/edenmod/emotes_manifest.json";
 	private static final String DEFAULT_FONT_ID = "edenmod:emotes";
 

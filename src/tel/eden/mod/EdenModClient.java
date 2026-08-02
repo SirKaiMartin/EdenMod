@@ -99,15 +99,14 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import org.lwjgl.glfw.GLFW;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Client entrypoint: wires server gating, the chat-capture relay, the WebSocket
  * client, the keybind, and the re-auth timer together.
  */
 public final class EdenModClient implements ClientModInitializer {
-	public static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	public static final EdenLogger LOGGER = EdenLogger.get();
 	private static final String MOD_VERSION = FabricLoader.getInstance().getModContainer("edenmod").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
 
 	private static EdenModClient instance;
@@ -1167,6 +1166,8 @@ public final class EdenModClient implements ClientModInitializer {
 		long delay = PARTY_COMMAND_DELAY_MS;
 		for (String ign : invites) {
 			if (ign.equals("*filled*") || ign.equalsIgnoreCase(playerName()))
+				continue;
+			if (!ign.matches("[A-Za-z0-9_]{1,16}"))
 				continue;
 			sendServerCommandLater("party " + ign, delay);
 			delay += PARTY_COMMAND_DELAY_MS;

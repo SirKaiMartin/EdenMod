@@ -11,8 +11,9 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Raw-WebSocket client to the bridge backend.
@@ -22,8 +23,10 @@ import org.slf4j.LoggerFactory;
  * {@code discordMessage} events to a sink and sends captured guild chat outbound.
  */
 public final class BridgeWebSocketClient {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final int MAX_BACKOFF_SECONDS = 60;
+	private static final int MAX_SESSION_VERIFY_RETRIES = 3;
+	private static final Pattern SERVER_ID_PATTERN = Pattern.compile("[0-9a-fA-F\\-]{1,128}");
 
 	/** Callbacks for inbound bridge events (delivered off the game thread). */
 	public interface MessageSink {
@@ -140,6 +143,9 @@ public final class BridgeWebSocketClient {
 	private volatile WebSocket socket;
 	private volatile boolean running;
 	private int backoffSeconds = 1;
+	private final AtomicBoolean authChallengeSeen = new AtomicBoolean(false);
+	private volatile String pendingAuthUsername;
+	private int sessionVerifyRetries = 0;
 
 	private BridgeWebSocketClient(URI uri, String modVersion, MessageSink sink, SessionAuthenticator authenticator) {
 		this.uri = uri;
@@ -639,6 +645,8 @@ public final class BridgeWebSocketClient {
 				LOGGER.warn("Bridge WebSocket connect failed: {}", error.toString());
 				scheduleReconnect();
 			} else {
+				authChallengeSeen.set(false);
+				pendingAuthUsername = null;
 				socket = ws;
 				LOGGER.info("Bridge WebSocket connected; awaiting session challenge");
 				// The socket is open but not yet trusted: the server sends an
@@ -716,9 +724,10 @@ public final class BridgeWebSocketClient {
 					// on full access or prompts the player otherwise.
 					boolean linked = getBool(obj, "linked");
 					boolean member = getBool(obj, "member");
-					String guildRank = get(obj, "guildRank");
-					String discordRank = get(obj, "discordRank");
-					LOGGER.info("Bridge session verified (linked={} member={} guildRank={} discordRank={})", linked, member, guildRank, discordRank);
+					String guildRank = cap(get(obj, "guildRank"), 64);
+					String discordRank = cap(get(obj, "discordRank"), 64);
+					LOGGER.info("Bridge session verified as {} (linked={} member={})", pendingAuthUsername != null ? pendingAuthUsername : "?", linked, member);
+					sessionVerifyRetries = 0;
 					backoffSeconds = 1;
 					try {
 						sink.onAuthStatus(linked, member, guildRank, discordRank);
@@ -732,6 +741,10 @@ public final class BridgeWebSocketClient {
 						// Retryable (Mojang hiccup, rate limit, slow handshake): keep
 						// running so the imminent onClose schedules a backoff reconnect.
 						LOGGER.warn("Bridge transient auth error: {} (will retry)", code);
+					} else if ("session_unverified".equals(code) && sessionVerifyRetries < MAX_SESSION_VERIFY_RETRIES) {
+						sessionVerifyRetries++;
+						LOGGER.warn("Session verification failed for {} (attempt {}/{}): Mojang hasJoined returned nothing — retrying after reconnect", pendingAuthUsername != null ? pendingAuthUsername : "?", sessionVerifyRetries, MAX_SESSION_VERIFY_RETRIES);
+						// Leave running=true so the imminent onClose schedules a reconnect.
 					} else {
 						LOGGER.warn("Bridge rejected connection: {}", code);
 						running = false;
@@ -754,7 +767,11 @@ public final class BridgeWebSocketClient {
 	 * unverified (the server times it out and closes).
 	 */
 	private void handleAuthChallenge(String serverId) {
-		if (serverId == null || serverId.isEmpty()) {
+		if (serverId == null || serverId.isEmpty() || !SERVER_ID_PATTERN.matcher(serverId).matches()) {
+			return;
+		}
+		if (!authChallengeSeen.compareAndSet(false, true)) {
+			LOGGER.warn("Ignoring repeated authChallenge (one per connection)");
 			return;
 		}
 		Thread thread = new Thread(() -> {
@@ -768,6 +785,7 @@ public final class BridgeWebSocketClient {
 					LOGGER.warn("Session authenticator returned no username; cannot verify");
 					return;
 				}
+				pendingAuthUsername = username;
 				JsonObject obj = new JsonObject();
 				obj.addProperty("type", "authResponse");
 				obj.addProperty("username", username);
@@ -783,6 +801,10 @@ public final class BridgeWebSocketClient {
 	/** Whether a server {@code error} code is retryable rather than a hard rejection. */
 	private static boolean isTransientAuthError(String code) {
 		return "session_auth_unavailable".equals(code) || "session_auth_timeout".equals(code) || "rate_limited".equals(code);
+	}
+
+	private static String cap(String s, int max) {
+		return s.length() <= max ? s : s.substring(0, max);
 	}
 
 	private static String get(JsonObject obj, String key) {

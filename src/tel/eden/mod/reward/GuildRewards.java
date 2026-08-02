@@ -35,8 +35,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 
 /**
  * Gifts guild reward items (aspects/tomes/emeralds) to members by driving the
@@ -50,7 +49,7 @@ import org.slf4j.LoggerFactory;
  * runs on a dedicated background thread so the game is never blocked.
  */
 public final class GuildRewards {
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	private static final long WEEK_MS = 604_800_000L;
 	private static final long REFRESH_INTERVAL_MS = 600_000L; // 10 min, like the script
 	private static final long MENU_DELAY_MS = 600L;

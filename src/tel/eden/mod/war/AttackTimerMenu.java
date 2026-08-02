@@ -26,8 +26,7 @@ import net.minecraft.world.scores.PlayerScoreEntry;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import org.lwjgl.glfw.GLFW;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import tel.eden.mod.EdenLogger;
 import tel.eden.mod.EdenModClient;
 import tel.eden.mod.config.BridgeConfig;
 import tel.eden.mod.hud.HudLayout;
@@ -458,7 +457,7 @@ public final class AttackTimerMenu {
 		return goer.name();
 	}
 
-	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
+	private static final EdenLogger LOGGER = EdenLogger.get();
 	/** Skins resolved by uuid from Mojang, for goers not in our player list (cross-world). */
 	private static final Map<UUID, PlayerSkin> resolvedSkins = new ConcurrentHashMap<>();
 	/**
