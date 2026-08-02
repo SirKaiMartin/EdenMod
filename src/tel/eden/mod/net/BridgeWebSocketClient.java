@@ -102,13 +102,34 @@ public final class BridgeWebSocketClient {
 		 * snapshot — replace, don't merge, the who's-going state.
 		 */
 		void onWarBoard(java.util.List<WarBoardEntry> entries);
+
+		/**
+		 * The Mojang session was verified ({@code authOk}); {@code linked} and
+		 * {@code member} report this player's backend standing. Both true means full
+		 * bridge access (begin the session); otherwise the socket stays open with no
+		 * guild access and the mod should prompt the player (link / not in the guild).
+		 * {@code guildRank} (e.g. "Chief") and {@code discordRank} (e.g. "Senate") are
+		 * empty strings when not applicable.
+		 */
+		void onAuthStatus(boolean linked, boolean member, String guildRank, String discordRank);
+	}
+
+	/**
+	 * Proves the connecting player holds a live Minecraft session (the v2 Mojang
+	 * handshake). Given the server's {@code serverId} nonce it performs a Mojang
+	 * {@code joinServer} for the current account and returns the IGN to report; the
+	 * bridge then confirms that server-side via {@code hasJoined}. The access token
+	 * goes only to Mojang, never to the bridge.
+	 */
+	public interface SessionAuthenticator {
+		/** Complete {@code joinServer} for {@code serverId}; return the IGN to report. */
+		String joinServer(String serverId) throws Exception;
 	}
 
 	private final URI uri;
-	private final String jwt;
 	private final String modVersion;
 	private final MessageSink sink;
-	private final Runnable onConnected;
+	private final SessionAuthenticator authenticator;
 	private final HttpClient http = HttpClient.newHttpClient();
 	private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "eden-bridge-ws");
@@ -120,21 +141,22 @@ public final class BridgeWebSocketClient {
 	private volatile boolean running;
 	private int backoffSeconds = 1;
 
-	private BridgeWebSocketClient(URI uri, String jwt, String modVersion, MessageSink sink, Runnable onConnected) {
+	private BridgeWebSocketClient(URI uri, String modVersion, MessageSink sink, SessionAuthenticator authenticator) {
 		this.uri = uri;
-		this.jwt = jwt;
 		this.modVersion = modVersion;
 		this.sink = sink;
-		this.onConnected = onConnected;
+		this.authenticator = authenticator;
 	}
 
 	/**
-	 * Create a client for {@code backendBaseUrl} (an https:// URL). {@code onConnected}
-	 * runs each time the socket (re)connects.
+	 * Create a client for {@code backendBaseUrl} (an https:// URL). Connects to the
+	 * Mojang-authenticated {@code /ws/v2} endpoint; the server verifies the Minecraft
+	 * session and reports standing via {@link MessageSink#onAuthStatus} (on
+	 * {@code authOk}). {@code authenticator} answers the server's session challenge.
 	 *
 	 * @throws IllegalArgumentException if the URL is not https (TLS is required)
 	 */
-	public static BridgeWebSocketClient create(String backendBaseUrl, String jwt, String modVersion, MessageSink sink, Runnable onConnected) {
+	public static BridgeWebSocketClient create(String backendBaseUrl, String modVersion, MessageSink sink, SessionAuthenticator authenticator) {
 		String base = backendBaseUrl.strip();
 		if (!base.startsWith("https://")) {
 			throw new IllegalArgumentException("bridge backend must be https (refusing non-TLS)");
@@ -143,7 +165,7 @@ public final class BridgeWebSocketClient {
 		if (wss.endsWith("/")) {
 			wss = wss.substring(0, wss.length() - 1);
 		}
-		return new BridgeWebSocketClient(URI.create(wss + "/ws"), jwt, modVersion, sink, onConnected);
+		return new BridgeWebSocketClient(URI.create(wss + "/ws/v2"), modVersion, sink, authenticator);
 	}
 
 	/** Start connecting (and keep reconnecting until {@link #close()}). */
@@ -585,7 +607,7 @@ public final class BridgeWebSocketClient {
 		if (!running) {
 			return;
 		}
-		http.newWebSocketBuilder().header("Authorization", "Bearer " + jwt).header("X-Mod-Version", modVersion).connectTimeout(Duration.ofSeconds(10)).buildAsync(uri, new Listener()).whenComplete((ws, error) -> {
+		http.newWebSocketBuilder().header("X-Mod-Version", modVersion).connectTimeout(Duration.ofSeconds(10)).buildAsync(uri, new Listener()).whenComplete((ws, error) -> {
 			// close() may have been called while the connection was in flight; if so,
 			// discard the socket so the server doesn't see a ghost connection.
 			if (!running) {
@@ -618,13 +640,10 @@ public final class BridgeWebSocketClient {
 				scheduleReconnect();
 			} else {
 				socket = ws;
-				backoffSeconds = 1;
-				LOGGER.info("Bridge WebSocket connected");
-				try {
-					onConnected.run();
-				} catch (RuntimeException e) {
-					LOGGER.warn("onConnected callback failed", e);
-				}
+				LOGGER.info("Bridge WebSocket connected; awaiting session challenge");
+				// The socket is open but not yet trusted: the server sends an
+				// authChallenge, and only on authOk do we reset backoff and hand the
+				// verified standing to onAuthStatus. See handlePayload.
 			}
 		});
 	}
@@ -690,11 +709,34 @@ public final class BridgeWebSocketClient {
 				case "pillMessage" -> sink.onPillMessage(get(obj, "label"), get(obj, "content"), get(obj, "color"));
 				case "warCountsReply" -> sink.onWarCounts(getInt(obj, "days", 7), parseWarCounts(obj), get(obj, "requester"), get(obj, "color"));
 				case "warBoard" -> sink.onWarBoard(parseWarBoard(obj));
+				case "authChallenge" -> handleAuthChallenge(get(obj, "serverId"));
+				case "authOk" -> {
+					// Session verified: reset backoff and hand the backend-reported
+					// standing (linked/member/ranks) to the sink, which begins the session
+					// on full access or prompts the player otherwise.
+					boolean linked = getBool(obj, "linked");
+					boolean member = getBool(obj, "member");
+					String guildRank = get(obj, "guildRank");
+					String discordRank = get(obj, "discordRank");
+					LOGGER.info("Bridge session verified (linked={} member={} guildRank={} discordRank={})", linked, member, guildRank, discordRank);
+					backoffSeconds = 1;
+					try {
+						sink.onAuthStatus(linked, member, guildRank, discordRank);
+					} catch (RuntimeException e) {
+						LOGGER.warn("onAuthStatus callback failed", e);
+					}
+				}
 				case "error" -> {
 					String code = get(obj, "code");
-					LOGGER.warn("Bridge rejected connection: {}", code);
-					running = false;
-					sink.onConnectionRejected(code);
+					if (isTransientAuthError(code)) {
+						// Retryable (Mojang hiccup, rate limit, slow handshake): keep
+						// running so the imminent onClose schedules a backoff reconnect.
+						LOGGER.warn("Bridge transient auth error: {} (will retry)", code);
+					} else {
+						LOGGER.warn("Bridge rejected connection: {}", code);
+						running = false;
+						sink.onConnectionRejected(code);
+					}
 				}
 				default -> {
 					/* ignore unknown types */ }
@@ -702,6 +744,45 @@ public final class BridgeWebSocketClient {
 		} catch (RuntimeException e) {
 			LOGGER.debug("Ignoring malformed inbound payload", e);
 		}
+	}
+
+	/**
+	 * Answer the server's session challenge on a background thread: perform the
+	 * Mojang {@code joinServer} for {@code serverId}, then report the IGN so the
+	 * bridge can confirm it via {@code hasJoined}. Runs off the read thread because
+	 * {@code joinServer} does network I/O; failures just leave the connection
+	 * unverified (the server times it out and closes).
+	 */
+	private void handleAuthChallenge(String serverId) {
+		if (serverId == null || serverId.isEmpty()) {
+			return;
+		}
+		Thread thread = new Thread(() -> {
+			WebSocket current = socket;
+			if (current == null) {
+				return;
+			}
+			try {
+				String username = authenticator.joinServer(serverId);
+				if (username == null || username.isEmpty()) {
+					LOGGER.warn("Session authenticator returned no username; cannot verify");
+					return;
+				}
+				JsonObject obj = new JsonObject();
+				obj.addProperty("type", "authResponse");
+				obj.addProperty("username", username);
+				current.sendText(obj.toString(), true);
+			} catch (Exception e) {
+				LOGGER.warn("Mojang session join failed: {}", e.toString());
+			}
+		}, "eden-session-auth");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	/** Whether a server {@code error} code is retryable rather than a hard rejection. */
+	private static boolean isTransientAuthError(String code) {
+		return "session_auth_unavailable".equals(code) || "session_auth_timeout".equals(code) || "rate_limited".equals(code);
 	}
 
 	private static String get(JsonObject obj, String key) {

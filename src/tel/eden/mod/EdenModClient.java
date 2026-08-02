@@ -57,6 +57,8 @@ import tel.eden.mod.war.WarDPS;
 import tel.eden.mod.war.WarHud;
 import tel.eden.mod.war.WarTracker;
 import tel.eden.mod.util.WynntilsChatBridge;
+import com.mojang.authlib.minecraft.MinecraftSessionService;
+import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -88,6 +90,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.User;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
@@ -157,7 +160,38 @@ public final class EdenModClient implements ClientModInitializer {
 	public BridgeWebSocketClient socket() {
 		return socket;
 	}
-	private String socketJwt;
+
+	/** This player's backend standing, learned live from {@code authOk} (never stored). */
+	public enum BridgeStatus {
+		/** Not connected/verified yet this session (or off Wynncraft). */
+		UNKNOWN,
+		/** Linked and a guild member — full bridge access. */
+		FULL,
+		/** Verified but not linked — the player is prompted to link. */
+		NOT_LINKED,
+		/** Linked but not a guild member — the bridge stays inactive. */
+		NOT_MEMBER
+	}
+
+	private volatile BridgeStatus bridgeStatus = BridgeStatus.UNKNOWN;
+	/** In-game guild rank (e.g. "Chief"), set on full access, cleared on disconnect. */
+	private volatile String liveGuildRank = "";
+	/** Discord rank (e.g. "Senate"), set on full access, cleared on disconnect. */
+	private volatile String liveDiscordRank = "";
+
+	/** This player's live bridge standing, for the config screen. */
+	public BridgeStatus bridgeStatus() {
+		return bridgeStatus;
+	}
+	/** In-game guild rank last reported by the backend, or empty if unknown. */
+	public String liveGuildRank() {
+		return liveGuildRank;
+	}
+	/** Discord rank last reported by the backend, or empty if unknown. */
+	public String liveDiscordRank() {
+		return liveDiscordRank;
+	}
+
 	private boolean onWynncraft;
 	// Mutated on the inbound-message path and read from GUI screens on the render
 	// thread; copy-on-write keeps those cross-thread reads from racing the writes.
@@ -223,8 +257,6 @@ public final class EdenModClient implements ClientModInitializer {
 	private static final int STORAGE_CHECK_INTERVAL_TICKS = 10; // 0.5 s at 20 tps
 	// Last {aspects, tomes, emeralds} relayed, so an unchanged read isn't re-sent.
 	private volatile long[] lastStorageSent = null;
-	// Silent JWT renewal: trigger this many seconds before expiry.
-	private static final long RENEWAL_THRESHOLD_SECS = 30L * 24 * 60 * 60; // 30 days
 
 	/** The live mod instance (used by the chat-capture mixin). */
 	public static EdenModClient instance() {
@@ -357,14 +389,10 @@ public final class EdenModClient implements ClientModInitializer {
 			// so a previous world/session's timers, defence, and heads never linger.
 			ScoreboardCapture.reset();
 			AttackTimerMenu.reset();
-			// Capture whether this server is Wynncraft before evaluateGating() may call
-			// disconnect(), which clears onWynncraft even when the player is still on
-			// Wynncraft (e.g. expired JWT). remindIfUnlinked needs the real server state.
-			boolean joinedWynncraft = client.getSingleplayerServer() == null && client.getCurrentServer() != null && Wynncraft.isWynncraft(client.getCurrentServer().ip);
+			// Connect if applicable; the backend reports link/membership standing via
+			// authOk (handleAuthStatus), which drives any "please link" prompt.
 			evaluateGating(client);
-			remindIfUnlinked(joinedWynncraft);
 			checkForUpdateOnce();
-			checkTokenRenewal();
 			if (onWynncraft) {
 				guildRewards.ensureFresh(playerName());
 			}
@@ -488,7 +516,7 @@ public final class EdenModClient implements ClientModInitializer {
 			pendingConnectionCode = null;
 			switch (connCode) {
 				case "version_rejected" -> display(() -> Component.literal("[EdenMod] This mod version is no longer accepted by the bridge — use /eden update to upgrade.").withStyle(ChatFormatting.RED));
-				case "not_member" -> display(() -> Component.literal("[EdenMod] Only players in the Eden guild may use this mod.").withStyle(ChatFormatting.RED));
+				case "session_unverified" -> display(() -> Component.literal("[EdenMod] Couldn't verify your Minecraft session — make sure you're logged into the account you linked, then rejoin.").withStyle(ChatFormatting.RED));
 				case "http_401" -> {
 					Component btn = openConfigButton();
 					display(() -> DiscordChatFormatter.tokenExpired(btn));
@@ -545,7 +573,10 @@ public final class EdenModClient implements ClientModInitializer {
 		var server = client.getCurrentServer();
 		boolean integrated = client.getSingleplayerServer() != null;
 		onWynncraft = !integrated && server != null && Wynncraft.isWynncraft(server.ip);
-		if (onWynncraft && config.enabled && config.hasValidJwt()) {
+		// No local link check: connect whenever enabled on Wynncraft. The backend
+		// verifies the Minecraft session and reports standing (link/membership) via
+		// authOk, keeping unlinked/non-member players connected as observers.
+		if (onWynncraft && config.enabled) {
 			connect();
 		} else {
 			disconnect();
@@ -553,18 +584,14 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	private synchronized void connect() {
-		// Rebuild the socket when the backend URL or JWT changes (e.g. after the
-		// tunnel URL changes and the user re-links); otherwise a stale client can
-		// get stuck retrying the old URL forever.
+		// The v2 endpoint authenticates the live Minecraft session on every
+		// connection, so the socket no longer depends on a JWT and never needs
+		// rebuilding: if one already exists, it is current.
 		if (socket != null) {
-			if (config.jwt.equals(socketJwt)) {
-				return;
-			}
-			socket.close();
-			socket = null;
+			return;
 		}
 		try {
-			socket = BridgeWebSocketClient.create(BridgeConfig.DEFAULT_BACKEND_URL, config.jwt, MOD_VERSION, new BridgeWebSocketClient.MessageSink() {
+			socket = BridgeWebSocketClient.create(BridgeConfig.DEFAULT_BACKEND_URL, MOD_VERSION, new BridgeWebSocketClient.MessageSink() {
 				@Override
 				public void onDiscordMessage(String author, String content, String replyTo, String replyExcerpt, String color) {
 					displayColored(color, () -> DiscordChatFormatter.format(author, content, replyTo, replyExcerpt));
@@ -715,8 +742,12 @@ public final class EdenModClient implements ClientModInitializer {
 				public void onGameFeedback(String message, String color) {
 					displayColored(color, () -> DiscordChatFormatter.systemLine(message, net.minecraft.ChatFormatting.GOLD));
 				}
-			}, this::onBridgeConnected);
-			socketJwt = config.jwt;
+
+				@Override
+				public void onAuthStatus(boolean linked, boolean member, String guildRank, String discordRank) {
+					handleAuthStatus(linked, member, guildRank, discordRank);
+				}
+			}, EdenModClient::authenticateSession);
 			socket.start();
 		} catch (IllegalArgumentException e) {
 			LOGGER.warn("Not connecting: {}", e.getMessage());
@@ -724,51 +755,26 @@ public final class EdenModClient implements ClientModInitializer {
 		}
 	}
 
+	/**
+	 * Answer a v2 session challenge: run Mojang's {@code joinServer} for the current
+	 * account against the server's {@code serverId} nonce and return the IGN to
+	 * report. The access token is sent only to Mojang. The bridge then verifies the
+	 * join via {@code hasJoined} — so a patched mod cannot fake this, and a copied
+	 * token is useless to anyone not logged into this Minecraft account.
+	 */
+	private static String authenticateSession(String serverId) throws Exception {
+		Minecraft mc = Minecraft.getInstance();
+		User user = mc.getUser();
+		MinecraftSessionService sessionService = new YggdrasilAuthenticationService(mc.getProxy()).createMinecraftSessionService();
+		sessionService.joinServer(user.getProfileId(), user.getAccessToken(), serverId);
+		return user.getName();
+	}
+
 	/** A clickable "[B]" button (or whatever key is bound) that opens the config screen. */
 	private Component openConfigButton() {
 		String keyName = openConfigKey.getTranslatedKeyMessage().getString();
 		Style style = Style.EMPTY.withColor(ChatFormatting.AQUA).withUnderlined(true).withClickEvent(new ClickEvent.RunCommand("/eden config")).withHoverEvent(new HoverEvent.ShowText(Component.literal("Open EdenMod settings")));
 		return Component.literal("[" + keyName + "]").setStyle(style);
-	}
-
-	/** On login, nudge players who haven't linked yet to do so. */
-	private void remindIfUnlinked(boolean isOnWynncraft) {
-		if (!isOnWynncraft || !config.enabled)
-			return;
-		Component btn = openConfigButton();
-		if (config.jwt.isEmpty()) {
-			display(() -> DiscordChatFormatter.linkReminder(btn));
-		} else if (!config.hasValidJwt()) {
-			display(() -> DiscordChatFormatter.tokenExpired(btn));
-		}
-	}
-
-	/**
-	 * Silently renew the JWT when it is within 30 days of expiry, so players
-	 * never need to re-link as long as they play at least once per token TTL.
-	 */
-	private void checkTokenRenewal() {
-		if (config.jwt.isEmpty() || config.jwtExpiresAt == 0)
-			return;
-		long remaining = config.jwtExpiresAt - System.currentTimeMillis() / 1000L;
-		// Already expired → remindIfUnlinked() shows the "token expired" message; skip renewal.
-		if (remaining <= 0 || remaining > RENEWAL_THRESHOLD_SECS)
-			return;
-		LOGGER.info("JWT expires in {}s, attempting silent renewal", remaining);
-		new AuthFlow().refresh(BridgeConfig.DEFAULT_BACKEND_URL, config.jwt, new AuthFlow.Callback() {
-			@Override
-			public void onSuccess(String jwt, long expiresAt) {
-				config.jwt = jwt;
-				config.jwtExpiresAt = expiresAt;
-				config.save();
-				LOGGER.info("JWT silently renewed");
-			}
-
-			@Override
-			public void onError(String messageText) {
-				LOGGER.warn("Silent JWT renewal failed: {}", messageText);
-			}
-		});
 	}
 
 	/** Check GitHub for a newer release once per session; prompt in chat if found. */
@@ -1781,7 +1787,32 @@ public final class EdenModClient implements ClientModInitializer {
 		}
 	}
 
-	/** On a fresh bridge connection, announce this session's login exactly once. */
+	/**
+	 * Apply the backend's {@code authOk} standing. Full access (linked and a member)
+	 * begins the session; otherwise the socket stays open with no guild access and the
+	 * player is prompted once per standing change. Runs off the game thread.
+	 */
+	private void handleAuthStatus(boolean linked, boolean member, String guildRank, String discordRank) {
+		BridgeStatus previous = bridgeStatus;
+		if (linked && member) {
+			bridgeStatus = BridgeStatus.FULL;
+			liveGuildRank = guildRank;
+			liveDiscordRank = discordRank;
+			onBridgeConnected();
+		} else if (!linked) {
+			bridgeStatus = BridgeStatus.NOT_LINKED;
+			if (previous != BridgeStatus.NOT_LINKED) {
+				display(() -> DiscordChatFormatter.linkReminder(openConfigButton()));
+			}
+		} else {
+			bridgeStatus = BridgeStatus.NOT_MEMBER;
+			if (previous != BridgeStatus.NOT_MEMBER) {
+				display(() -> DiscordChatFormatter.systemLine("You're not in the Eden guild — the bridge is inactive.", ChatFormatting.YELLOW));
+			}
+		}
+	}
+
+	/** On full access, begin this session: hand back deducts and announce login once. */
 	private void onBridgeConnected() {
 		handBackOutstandingDeducts("were not confirmed deducted before the bridge dropped");
 		if (loginPending) {
@@ -1803,6 +1834,9 @@ public final class EdenModClient implements ClientModInitializer {
 	private synchronized void disconnect() {
 		onWynncraft = false;
 		loginPending = false;
+		bridgeStatus = BridgeStatus.UNKNOWN;
+		liveGuildRank = "";
+		liveDiscordRank = "";
 		inGameWorld = false;
 		tabCheckTick = 0;
 		presenceTick = 0;
@@ -2121,21 +2155,20 @@ public final class EdenModClient implements ClientModInitializer {
 		return out;
 	}
 
-	/** Start the browser link flow; persists the JWT on success and (re)connects. */
+	/**
+	 * Start the browser link flow. On success the account link is recorded on the
+	 * backend (no token is stored locally); we then re-handshake so the bridge re-reads
+	 * our now-linked standing. The {@code jwt}/{@code expiresAt} the flow returns are
+	 * unused — /ws/v2 authenticates the live Minecraft session instead.
+	 */
 	public void startLinkFlow(Runnable onDone) {
 		new AuthFlow().begin(BridgeConfig.DEFAULT_BACKEND_URL, new AuthFlow.Callback() {
 			@Override
 			public void onSuccess(String jwt, long expiresAt) {
-				config.jwt = jwt;
-				config.jwtExpiresAt = expiresAt;
-				config.save();
 				Minecraft.getInstance().execute(() -> {
-					String name = playerName();
-					if (name != null && !name.isEmpty()) {
-						config.linkedUsername = name;
-						config.save();
-					}
-					evaluateGating(Minecraft.getInstance());
+					// An existing observer connection won't upgrade itself; a fresh
+					// handshake makes the backend re-read the now-linked standing.
+					reconnectBridge();
 					display(DiscordChatFormatter::linkSuccess);
 					onDone.run();
 				});
@@ -2147,5 +2180,14 @@ public final class EdenModClient implements ClientModInitializer {
 				Minecraft.getInstance().execute(onDone);
 			}
 		});
+	}
+
+	/** Drop any current bridge socket and re-evaluate, forcing a fresh /ws/v2 handshake. */
+	private synchronized void reconnectBridge() {
+		if (socket != null) {
+			socket.close();
+			socket = null;
+		}
+		evaluateGating(Minecraft.getInstance());
 	}
 }

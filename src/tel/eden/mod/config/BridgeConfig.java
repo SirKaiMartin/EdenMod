@@ -18,9 +18,10 @@ import org.slf4j.LoggerFactory;
  * Persisted client configuration, stored at {@code config/edenmod.json}.
  *
  * <p>
- * Holds the backend base URL the mod talks to, the current backend-signed JWT
- * (and its expiry, so we can re-auth before it lapses), and whether the bridge
- * is enabled.
+ * Holds the backend base URL the mod talks to and the per-feature toggles.
+ * No auth state is persisted here — identity is verified live via Mojang on
+ * every /ws/v2 connection, and standing (linked/member/rank) is reported by the
+ * backend in the {@code authOk} frame.
  */
 public final class BridgeConfig {
 	private static final Logger LOGGER = LoggerFactory.getLogger("edenmod");
@@ -32,15 +33,6 @@ public final class BridgeConfig {
 
 	/** Always {@link #DEFAULT_BACKEND_URL}; transient so it is never written to the config file. */
 	public transient String backendBaseUrl = DEFAULT_BACKEND_URL;
-
-	/** Backend-signed JWT obtained from the link flow; empty until linked. */
-	public String jwt = "";
-
-	/** Unix epoch seconds at which {@link #jwt} expires (0 when unknown). */
-	public long jwtExpiresAt = 0L;
-
-	/** Minecraft username that completed the link flow; empty if never linked or unknown. */
-	public String linkedUsername = "";
 
 	/** Whether the bridge should connect while on Wynncraft. */
 	public boolean enabled = true;
@@ -337,10 +329,5 @@ public final class BridgeConfig {
 		} catch (IOException e) {
 			LOGGER.warn("Failed to write edenmod config", e);
 		}
-	}
-
-	/** Whether we currently hold a non-expired JWT. */
-	public boolean hasValidJwt() {
-		return !jwt.isEmpty() && jwtExpiresAt > (System.currentTimeMillis() / 1000L);
 	}
 }

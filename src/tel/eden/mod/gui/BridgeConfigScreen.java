@@ -77,7 +77,7 @@ public final class BridgeConfigScreen extends Screen {
 		int cx = contentX();
 		int cw = contentWidth();
 
-		linkButton = this.addRenderableWidget(Button.builder(Component.literal("Link account"), button -> startLinkFlow()).bounds(cx, 84, cw, 20).build());
+		linkButton = this.addRenderableWidget(Button.builder(Component.literal("Link account"), button -> startLinkFlow()).bounds(cx, 92, cw, 20).build());
 
 		// --- One line per setting; the list handles layout + smooth scrolling. ---
 		addToggleRow("Bridge", () -> config.enabled, v -> config.enabled = v, "Enabled", "Disabled", true);
@@ -198,14 +198,26 @@ public final class BridgeConfigScreen extends Screen {
 	}
 
 	private Component linkStatusText() {
-		if (config.jwt.isEmpty()) {
-			return Component.literal("Not linked").withStyle(style -> style.withColor(0xAAAAAA));
+		String name = EdenModClient.playerName();
+		return switch (mod.bridgeStatus()) {
+			case FULL -> Component.literal(name == null || name.isEmpty() ? "Linked" : "Linked as " + name).withStyle(style -> style.withColor(0x55FF55));
+			case NOT_MEMBER -> Component.literal("Linked, but not in the Eden guild").withStyle(style -> style.withColor(0xFFAA00));
+			case NOT_LINKED -> Component.literal("Not linked").withStyle(style -> style.withColor(0xFFAA00));
+			case UNKNOWN -> Component.literal("Join Wynncraft to check status").withStyle(style -> style.withColor(0xAAAAAA));
+		};
+	}
+
+	private Component rankStatusText() {
+		if (mod.bridgeStatus() != EdenModClient.BridgeStatus.FULL) {
+			return Component.empty();
 		}
-		if (!config.hasValidJwt()) {
-			return Component.literal("Token expired - re-link").withStyle(style -> style.withColor(0xFF5555));
+		String guildRank = mod.liveGuildRank();
+		String discordRank = mod.liveDiscordRank();
+		if ((guildRank == null || guildRank.isEmpty()) && (discordRank == null || discordRank.isEmpty())) {
+			return Component.empty();
 		}
-		String name = config.linkedUsername;
-		return Component.literal(name.isEmpty() ? "Linked" : "Linked as " + name).withStyle(style -> style.withColor(0x55FF55));
+		String label = (guildRank != null && !guildRank.isEmpty() && discordRank != null && !discordRank.isEmpty()) ? guildRank + "  ·  " + discordRank : (guildRank != null && !guildRank.isEmpty() ? guildRank : discordRank);
+		return Component.literal(label).withStyle(style -> style.withColor(0x88CC88));
 	}
 
 	// --- Fullscreen geometry (recomputed each frame so it tracks window resizes). ---
@@ -305,7 +317,8 @@ public final class BridgeConfigScreen extends Screen {
 		int logoHeight = logoWidth * LOGO_H / LOGO_W;
 		g.blit(RenderPipelines.GUI_TEXTURED, LOGO_TEXTURE, centerX - (logoWidth / 2), 10, 0.0f, 0.0f, logoWidth, logoHeight, LOGO_W, LOGO_H, LOGO_W, LOGO_H);
 		g.drawCenteredString(this.font, this.title, centerX, 54, 0xFFFFFFFF);
-		g.drawCenteredString(this.font, linkStatusText(), centerX, 68, 0xFFFFFFFF);
+		g.drawCenteredString(this.font, linkStatusText(), centerX, 66, 0xFFFFFFFF);
+		g.drawCenteredString(this.font, rankStatusText(), centerX, 78, 0xFFFFFFFF);
 
 		g.fill(cx, top, cx + cw, top + height, 0x22000000);
 
