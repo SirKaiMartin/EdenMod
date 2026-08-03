@@ -182,10 +182,12 @@ public final class EdenModClient implements ClientModInitializer {
 	public BridgeStatus bridgeStatus() {
 		return bridgeStatus;
 	}
+
 	/** In-game guild rank last reported by the backend, or empty if unknown. */
 	public String liveGuildRank() {
 		return liveGuildRank;
 	}
+
 	/** Discord rank last reported by the backend, or empty if unknown. */
 	public String liveDiscordRank() {
 		return liveDiscordRank;
@@ -224,6 +226,9 @@ public final class EdenModClient implements ClientModInitializer {
 	// Set when boot-time attestation fails — jar hash has no GitHub attestation, which
 	// means the jar is either unofficial or has been tampered with.
 	private volatile boolean pendingBootAttestationFailed;
+	// Guards the one-shot attestation-failure report to the bridge (sent on first connect
+	// after a failed boot check; skipped if attestation passed or was never run).
+	private volatile boolean attestationFailureReported;
 	private volatile boolean pendingCenteredEmotePicker;
 	// Non-null when the bridge rejected our connection; holds the error code
 	// ("version_rejected", "not_member", "http_401", etc.) so onClientTick can
@@ -539,7 +544,7 @@ public final class EdenModClient implements ClientModInitializer {
 		}
 		if (pendingBootAttestationFailed && client.player != null) {
 			pendingBootAttestationFailed = false;
-			display(() -> Component.empty().append(Component.literal("[EdenMod] ").withStyle(ChatFormatting.RED)).append(Component.literal("WARNING: ").withStyle(Style.EMPTY.withColor(ChatFormatting.RED).withBold(true))).append(Component.literal("This mod jar could not be verified against any official EdenMod release — it may have been tampered with. Reinstall EdenMod from the official releases.").withStyle(ChatFormatting.RED)));
+			display(() -> Component.empty().append(Component.literal("[EdenMod] ").withStyle(ChatFormatting.RED)).append(Component.literal("WARNING: ").withStyle(Style.EMPTY.withColor(ChatFormatting.RED).withBold(true))).append(Component.literal("This mod jar could not be verified against any official EdenMod release — it may have been tampered with. Try restarting your game, then if the issue persists, reinstall EdenMod from the official releases. If it still remains, contact FadeDave.").withStyle(ChatFormatting.RED)));
 		}
 		String connCode = pendingConnectionCode;
 		if (connCode != null && client.player != null) {
@@ -877,7 +882,8 @@ public final class EdenModClient implements ClientModInitializer {
 					display(() -> DiscordChatFormatter.systemLine("EdenMod " + info.version() + " downloaded — it applies when you close the game.", ChatFormatting.GREEN));
 				}
 				case NOT_INSTALLED_FROM_JAR -> display(() -> DiscordChatFormatter.systemLine("Couldn't auto-update (not running from a jar). Use the link to download.", ChatFormatting.GOLD));
-				case FAILED -> display(() -> DiscordChatFormatter.systemLine("Update download failed. Use the link to download it manually.", ChatFormatting.RED));
+				case FAILED -> display(() -> DiscordChatFormatter.systemLine("Update download failed. Try again in a moment. If the issue persist, update the mod manually.", ChatFormatting.RED));
+				case VERIFICATION_FAILED -> display(() -> DiscordChatFormatter.systemLine("EdenMod " + info.version() + " downloaded but could not be verified against the official release — try again later. If the issue persists, contact FadeDave.", ChatFormatting.RED));
 			}
 		}, "edenmod-update-download");
 		thread.setDaemon(true);
@@ -1861,6 +1867,16 @@ public final class EdenModClient implements ClientModInitializer {
 	/** On full access, begin this session: hand back deducts and announce login once. */
 	private void onBridgeConnected() {
 		handBackOutstandingDeducts("were not confirmed deducted before the bridge dropped");
+		if (!attestationFailureReported) {
+			String failedSha = updateInstaller.bootAttestationFailureSha();
+			if (failedSha != null) {
+				attestationFailureReported = true;
+				BridgeWebSocketClient current = socket;
+				if (current != null) {
+					current.sendAttestationFailure(failedSha);
+				}
+			}
+		}
 		if (loginPending) {
 			loginPending = false;
 			BridgeWebSocketClient current = socket;

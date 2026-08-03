@@ -63,6 +63,18 @@ public final class UpdateInstaller {
 
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
 
+	/**
+	 * The SHA-256 hex of the running jar when boot attestation failed, or {@code null} if
+	 * attestation passed (or was skipped). Set once by the boot-verify thread; read by
+	 * {@link tel.eden.mod.EdenModClient} when the bridge connects to report the failure.
+	 */
+	private volatile String bootAttestationFailureSha;
+
+	/** The SHA-256 of the running jar when boot attestation failed, or {@code null} if it passed. */
+	public String bootAttestationFailureSha() {
+		return bootAttestationFailureSha;
+	}
+
 	/** Outcome of a download-and-stage attempt. */
 	public enum Result {
 		/** Downloaded and staged; the swap will run when the game closes. */
@@ -70,7 +82,9 @@ public final class UpdateInstaller {
 		/** The mod isn't running from a jar (dev env) — can't self-apply. */
 		NOT_INSTALLED_FROM_JAR,
 		/** The download or staging failed. */
-		FAILED
+		FAILED,
+		/** The jar downloaded successfully but its Sigstore attestation could not be verified. */
+		VERIFICATION_FAILED
 	}
 
 	/** Download {@code info}'s jar and arrange the on-close swap. */
@@ -85,13 +99,30 @@ public final class UpdateInstaller {
 			Files.createDirectories(edenDir);
 			sweepStaleStaging(edenDir);
 			Path staged = edenDir.resolve("edenmod-" + info.version() + ".jar");
-			download(info.jarUrl(), staged);
+			int maxAttempts = 3;
+			for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+				try {
+					download(info.jarUrl(), staged);
+					break;
+				} catch (IOException e) {
+					Files.deleteIfExists(staged);
+					if (attempt == maxAttempts)
+						throw e;
+					LOGGER.warn("Update download attempt {}/{} failed — retrying in 5s: {}", attempt, maxAttempts, e.getMessage());
+					try {
+						Thread.sleep(5_000L);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+						return Result.FAILED;
+					}
+				}
+			}
 			if (!Files.isRegularFile(staged) || Files.size(staged) <= 0) {
 				return Result.FAILED;
 			}
 			if (!verifyAttestation(staged, info.version(), edenDir.resolve("edenmod-" + info.version() + "-attestation.json"))) {
 				Files.deleteIfExists(staged);
-				return Result.FAILED;
+				return Result.VERIFICATION_FAILED;
 			}
 			LOGGER.info("Update edenmod-{}.jar staged; will apply when the game closes", info.version());
 			// newJar goes into the mods folder root — that's where Fabric picks it up.
@@ -248,7 +279,26 @@ public final class UpdateInstaller {
 
 		Path bundlePath = edenDir.resolve("edenmod-" + version + "-attestation.json");
 		if (!Files.isRegularFile(bundlePath)) {
-			return fetchVerifyAndSaveBundle(bundlePath, hex, version);
+			// No cached bundle yet — must fetch from GitHub (network). Retry a few times
+			// so a transient connection error doesn't immediately show the tamper warning.
+			int maxAttempts = 3;
+			for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+				if (fetchVerifyAndSaveBundle(bundlePath, hex, version)) {
+					return true;
+				}
+				if (attempt < maxAttempts) {
+					LOGGER.info("Boot attestation attempt {}/{} failed — retrying in 5s", attempt, maxAttempts);
+					try {
+						Thread.sleep(5_000L);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+						bootAttestationFailureSha = hex;
+						return false;
+					}
+				}
+			}
+			bootAttestationFailureSha = hex;
+			return false;
 		}
 
 		// Bundle already on disk — verify locally; intermediates loaded from cache or fetched once.
@@ -264,6 +314,7 @@ public final class UpdateInstaller {
 			return true;
 		} catch (Exception e) {
 			LOGGER.warn("Boot attestation FAILED for edenmod-{}.jar: {}", version, e.getMessage());
+			bootAttestationFailureSha = hex;
 			return false;
 		}
 	}
@@ -376,10 +427,22 @@ public final class UpdateInstaller {
 				return fromBundle;
 			}
 		}
-		// 3. Network fetch from GitHub's Fulcio API.
-		X509Certificate[] fetched = tryFetchAndCacheIntermediates(edenDir);
-		if (fetched != null) {
-			return fetched;
+		// 3. Network fetch from GitHub's Fulcio API — retry a few times for transient failures.
+		int maxAttempts = 3;
+		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+			X509Certificate[] fetched = tryFetchAndCacheIntermediates(edenDir);
+			if (fetched != null) {
+				return fetched;
+			}
+			if (attempt < maxAttempts) {
+				LOGGER.info("Fulcio intermediates fetch attempt {}/{} failed — retrying in 5s", attempt, maxAttempts);
+				try {
+					Thread.sleep(5_000L);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					break;
+				}
+			}
 		}
 		throw new SecurityException("Fulcio intermediate certs unavailable — tried disk cache, bundle chain, and " + FULCIO_TRUST_BUNDLE_URL);
 	}

@@ -595,6 +595,18 @@ public final class BridgeWebSocketClient {
 		current.sendText(obj.toString(), true);
 	}
 
+	/** Report that the running jar failed its boot-time Sigstore attestation check. */
+	public void sendAttestationFailure(String sha) {
+		WebSocket current = socket;
+		if (current == null) {
+			return;
+		}
+		JsonObject obj = new JsonObject();
+		obj.addProperty("type", "attestationFailure");
+		obj.addProperty("sha", sha);
+		current.sendText(obj.toString(), true);
+	}
+
 	/** Relay the guild's current reward storage (aspects/tomes/emeralds) for the live counter. */
 	public void sendGuildStorage(int aspects, int tomes, long emeralds) {
 		WebSocket current = socket;
