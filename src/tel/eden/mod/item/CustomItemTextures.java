@@ -78,7 +78,9 @@ public final class CustomItemTextures {
 			for (String regex : item.lores()) {
 				lores.add(Pattern.compile(regex));
 			}
-			byType.computeIfAbsent(item.type().toLowerCase(Locale.ROOT), key -> new ArrayList<>()).add(new Rule(names, lores, Identifier.fromNamespaceAndPath(NAMESPACE, item.texture()), ConsumableLabels.forTexture(item.texture())));
+			// A label-only rule carries no model, so its key never has to name a shipped asset.
+			Identifier model = item.labelOnly() ? null : Identifier.fromNamespaceAndPath(NAMESPACE, item.texture());
+			byType.computeIfAbsent(item.type().toLowerCase(Locale.ROOT), key -> new ArrayList<>()).add(new Rule(names, lores, model, ConsumableLabels.forTexture(item.texture())));
 		}
 		return byType;
 	}
@@ -89,7 +91,8 @@ public final class CustomItemTextures {
 			return;
 		}
 		Decision decision = decisionFor(stack);
-		if (decision != null) {
+		// A label-only match has no model: it is here to name the slot, not to reskin it.
+		if (decision != null && decision.model() != null) {
 			stack.set(DataComponents.ITEM_MODEL, decision.model());
 		}
 	}

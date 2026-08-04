@@ -81,6 +81,14 @@ public final class AttackTimerMenu {
 	private static final Map<String, List<WarGoer>> going = new HashMap<>();
 	/** Territories that had an attack timer last tick, to detect when one ends. */
 	private static java.util.Set<String> previousActive = new java.util.HashSet<>();
+	// When each absent territory was last seen, so a timer has to stay gone before it
+	// counts as ended. Wynncraft rewrites a timer line every second as it counts down, and
+	// removing then re-adding the scoreboard entry leaves a frame where the line is simply
+	// not there — indistinguishable, on a single frame, from the war starting.
+	private static final java.util.Map<String, Long> missingSince = new java.util.HashMap<>();
+	// How long a territory must stay off the sidebar to be believed gone. A re-render blip
+	// is sub-second; a timer that really ended never comes back.
+	private static final long TIMER_GONE_MS = 3_000L;
 	// Last inside-status this client reported for its own head, and whether it was
 	// heading anywhere, so it only sends on a change (enter/leave the target territory).
 	private static boolean wasGoing;
@@ -199,21 +207,36 @@ public final class AttackTimerMenu {
 		Scoreboard scoreboard = sidebarScoreboard();
 		if (scoreboard == null || scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR) == null) {
 			previousActive.clear();
+			missingSince.clear();
 			return;
 		}
 		java.util.Set<String> current = new java.util.HashSet<>();
 		for (Upcoming attack : currentAttacks()) {
 			current.add(attack.territory());
 		}
+		long now = System.currentTimeMillis();
+		// Anything back on the board plainly did not end.
+		missingSince.keySet().removeAll(current);
+		// Territories still considered live: those on the board, plus any whose absence is
+		// too brief to trust. Ending one clears everybody's head for it on every client, so
+		// it is worth a few seconds' patience to be sure.
+		java.util.Set<String> active = new java.util.HashSet<>(current);
 		for (String territory : previousActive) {
-			if (!current.contains(territory)) {
-				chatDefenses.remove(territory);
-				if (socket != null) {
-					socket.sendWarTimerEnded(territory);
-				}
+			if (current.contains(territory)) {
+				continue;
+			}
+			Long since = missingSince.putIfAbsent(territory, now);
+			if (since == null || now - since < TIMER_GONE_MS) {
+				active.add(territory);
+				continue;
+			}
+			missingSince.remove(territory);
+			chatDefenses.remove(territory);
+			if (socket != null) {
+				socket.sendWarTimerEnded(territory);
 			}
 		}
-		previousActive = current;
+		previousActive = active;
 		reportInside(socket);
 	}
 
@@ -281,6 +304,7 @@ public final class AttackTimerMenu {
 		defenseConflict.clear();
 		going.clear();
 		previousActive.clear();
+		missingSince.clear();
 		clickBoxes.clear();
 		headBoxes.clear();
 		soonestTerritory = null;

@@ -210,8 +210,42 @@ public final class BridgeWebSocketClient {
 		current.sendText(obj.toString(), true);
 	}
 
-	/** Send one parsed guild raid completion to the backend. */
-	public void sendRaidCompletion(java.util.List<String> party, String raidName, int aspects, int emeralds, String guildExp) {
+	/**
+	 * Relay the guild's alliance roster, read whole from the in-game Diplomacy menu. The
+	 * backend replaces its stored roster with this, so it is only ever sent for a menu the
+	 * mod parsed in full.
+	 */
+	public void sendGuildAlliances(java.util.List<String> guilds, java.util.List<String> guildTags) {
+		WebSocket current = socket;
+		if (current == null) {
+			return;
+		}
+		JsonObject obj = new JsonObject();
+		obj.addProperty("type", "guildAlliances");
+		// Names and tags travel as two arrays paired by position; the backend drops the tags
+		// outright if the lengths disagree rather than mislabelling a guild.
+		JsonArray names = new JsonArray();
+		for (String guild : guilds) {
+			names.add(guild);
+		}
+		JsonArray tags = new JsonArray();
+		for (String tag : guildTags) {
+			tags.add(tag);
+		}
+		obj.add("guilds", names);
+		obj.add("tags", tags);
+		current.sendText(obj.toString(), true);
+	}
+
+	/**
+	 * Report a raid completion. {@code extraPlayers} is a ranked shortlist of players seen
+	 * around this client during the raid that the announcement did not name — candidates
+	 * for the allied guild members Wynncraft omits. Only a client that was in the raid can
+	 * observe them, so the backend deliberately keeps them out of its cross-client
+	 * consensus (nobody else can corroborate what they never saw), verifies each against
+	 * the alliance roster, and uses the survivors only to complete the party for display.
+	 */
+	public void sendRaidCompletion(java.util.List<String> party, String raidName, int aspects, int emeralds, String guildExp, java.util.List<String> extraPlayers) {
 		WebSocket current = socket;
 		if (current == null) {
 			return;
@@ -223,6 +257,13 @@ public final class BridgeWebSocketClient {
 			members.add(member);
 		}
 		obj.add("party", members);
+		if (!extraPlayers.isEmpty()) {
+			JsonArray extras = new JsonArray();
+			for (String extra : extraPlayers) {
+				extras.add(extra);
+			}
+			obj.add("extraPlayers", extras);
+		}
 		obj.addProperty("raidName", raidName);
 		obj.addProperty("aspects", aspects);
 		obj.addProperty("emeralds", emeralds);

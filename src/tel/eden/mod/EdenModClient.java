@@ -22,6 +22,7 @@ import tel.eden.mod.chat.OccurrenceSequencer;
 import tel.eden.mod.chat.PartyFormatter;
 import tel.eden.mod.chat.RaidCompletion;
 import tel.eden.mod.chat.RaidCompletionParser;
+import tel.eden.mod.chat.RaidPartyTracker;
 import tel.eden.mod.chat.RankChange;
 import tel.eden.mod.chat.RankChangeParser;
 import tel.eden.mod.chat.ShoutParser;
@@ -46,6 +47,7 @@ import tel.eden.mod.update.UpdateChecker;
 import tel.eden.mod.update.UpdateInfo;
 import tel.eden.mod.update.UpdateInstaller;
 import tel.eden.mod.util.Wynncraft;
+import tel.eden.mod.war.AllianceMenuScraper;
 import tel.eden.mod.war.AttackMenuScraper;
 import tel.eden.mod.war.AttackTimerMenu;
 import tel.eden.mod.war.ScoreboardCapture;
@@ -402,6 +404,8 @@ public final class EdenModClient implements ClientModInitializer {
 			// Fresh connection: drop the packet-captured scoreboard and all war-board state
 			// so a previous world/session's timers, defence, and heads never linger.
 			ScoreboardCapture.reset();
+			RaidPartyTracker.reset();
+			AllianceMenuScraper.reset();
 			AttackTimerMenu.reset();
 			// Connect if applicable; the backend reports link/membership standing via
 			// authOk (handleAuthStatus), which drives any "please link" prompt.
@@ -452,6 +456,9 @@ public final class EdenModClient implements ClientModInitializer {
 				for (String line : AttackTimerMenu.debugSidebarLines()) {
 					ctx.getSource().sendFeedback(Component.literal("[wartest] " + line).withStyle(ChatFormatting.AQUA));
 				}
+				for (String line : RaidPartyTracker.debugState()) {
+					ctx.getSource().sendFeedback(Component.literal("[wartest] " + line).withStyle(ChatFormatting.AQUA));
+				}
 				return 1;
 			})).then(ClientCommandManager.literal("help").executes(ctx -> {
 				showHelp(ctx.getSource());
@@ -487,7 +494,9 @@ public final class EdenModClient implements ClientModInitializer {
 			TerritoryOutlineRenderer.onTick(client);
 			WarDPS.onTick(config);
 			WarTracker.onTick();
+			RaidPartyTracker.onTick();
 			AttackMenuScraper.onTick(client);
+			AllianceMenuScraper.onTick(client);
 			AttackTimerMenu.onTick(socket);
 			tel.eden.mod.emote.EmoteWheel.onTick(client);
 			tel.eden.mod.emote.UnlockedEmoteDetector.onTick(client);
@@ -1907,6 +1916,9 @@ public final class EdenModClient implements ClientModInitializer {
 		// connection (stale timers/defence/heads).
 		ScoreboardCapture.reset();
 		AttackTimerMenu.reset();
+		// Likewise the raid tally: it holds players from the session that just ended, and
+		// after an account switch could attribute them to another guild's raid.
+		RaidPartyTracker.reset();
 		// Before the socket goes: an outstanding deduct must not outlive the session that
 		// made it, or it resurfaces at the next connect naming a player from another
 		// server — or, after an account switch, another guild.
@@ -2094,10 +2106,35 @@ public final class EdenModClient implements ClientModInitializer {
 	/** Send a parsed raid completion (local-dedup guarded), logging the outcome. */
 	private void relayRaid(BridgeWebSocketClient current, RaidCompletion line, String how) {
 		boolean sent = raidRelay.shouldSend(new CapturedMessage(line.raidName(), null, String.join(",", line.party())));
-		LOGGER.info("Raid {}: {} party={} aspects={} emeralds={} -> {}", how, line.raidName(), line.party(), line.aspects(), line.emeralds(), sent ? "sent" : "deduped");
+		// Allies are omitted from the announcement, so a short party means this was an
+		// allied raid; who else was present fills in the rest. Only for a raid this
+		// player was actually in — the tally is of players around us, so attaching it to
+		// another group's completion would name whoever we happened to be standing near.
+		boolean ownRaid = isOwnRaid(line.party());
+		java.util.List<String> extras = ownRaid ? RaidPartyTracker.extraPlayers(line.party()) : java.util.List.of();
+		LOGGER.info("Raid {}: {} party={} extras={} aspects={} emeralds={} -> {}", how, line.raidName(), line.party(), extras, line.aspects(), line.emeralds(), sent ? "sent" : "deduped");
 		if (sent) {
-			current.sendRaidCompletion(line.party(), line.raidName(), line.aspects(), line.emeralds(), line.guildExp());
+			current.sendRaidCompletion(line.party(), line.raidName(), line.aspects(), line.emeralds(), line.guildExp(), extras);
 		}
+		// One raid, one tally — dropped even when the send was deduped, or a completion
+		// arriving within the retention window would inherit this raid's players.
+		if (ownRaid) {
+			RaidPartyTracker.reset();
+		}
+	}
+
+	/** Whether the local player is named in a raid completion's party. */
+	private boolean isOwnRaid(java.util.List<String> party) {
+		String self = playerName();
+		if (self == null || self.isBlank()) {
+			return false;
+		}
+		for (String member : party) {
+			if (self.equalsIgnoreCase(member)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
