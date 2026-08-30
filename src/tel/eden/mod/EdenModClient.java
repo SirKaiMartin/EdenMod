@@ -197,8 +197,9 @@ public final class EdenModClient implements ClientModInitializer {
 
 	private boolean onWynncraft;
 	// Mutated on the inbound-message path and read from GUI screens on the render
-	// thread; copy-on-write keeps those cross-thread reads from racing the writes.
-	private final java.util.List<PartyInfo> knownParties = new java.util.concurrent.CopyOnWriteArrayList<>();
+	// thread. Each change publishes one immutable snapshot through this volatile field,
+	// so readers cannot observe the remove/add or clear/addAll halves of an update.
+	private volatile java.util.List<PartyInfo> knownParties = java.util.List.of();
 	// Latest aspects-owed list from the backend, read by AspectsPayoutScreen on the
 	// render thread. Each reply replaces the whole list, so publishing an immutable
 	// one through a volatile field keeps readers from ever seeing a half-applied
@@ -325,7 +326,20 @@ public final class EdenModClient implements ClientModInitializer {
 
 	/** An immutable snapshot of the currently known parties, safe to read off-thread. */
 	public java.util.List<PartyInfo> knownParties() {
-		return java.util.List.copyOf(knownParties);
+		return knownParties;
+	}
+
+	private synchronized void updateKnownParty(String event, PartyInfo party) {
+		java.util.List<PartyInfo> updated = new java.util.ArrayList<>(knownParties);
+		updated.removeIf(existing -> existing.id() == party.id());
+		if (!event.equals("closed")) {
+			updated.add(party);
+		}
+		knownParties = java.util.List.copyOf(updated);
+	}
+
+	private synchronized void replaceKnownParties(java.util.List<PartyInfo> parties) {
+		knownParties = java.util.List.copyOf(parties);
 	}
 
 	/** Members owed aspects, highest first, as of the last backend reply. */
@@ -696,10 +710,7 @@ public final class EdenModClient implements ClientModInitializer {
 
 				@Override
 				public void onPartyUpdate(String event, String actor, PartyInfo party, String color) {
-					knownParties.removeIf(p -> p.id() == party.id());
-					if (!event.equals("closed")) {
-						knownParties.add(party);
-					}
+					updateKnownParty(event, party);
 					// Auto-announce party activity only when the player has the
 					// (default-on) party feed enabled.
 					if (!config.partyAnnounce) {
@@ -717,8 +728,7 @@ public final class EdenModClient implements ClientModInitializer {
 
 				@Override
 				public void onPartyList(java.util.List<PartyInfo> parties, String color) {
-					knownParties.clear();
-					knownParties.addAll(parties);
+					replaceKnownParties(parties);
 					displayColored(color, () -> PartyFormatter.listing(parties));
 				}
 

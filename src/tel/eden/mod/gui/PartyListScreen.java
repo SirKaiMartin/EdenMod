@@ -53,7 +53,12 @@ public final class PartyListScreen extends EdenReferenceScreen {
 	private void refreshPartySnapshot() {
 		lastKnownParties.clear();
 		lastKnownParties.addAll(mod.knownParties());
+		lastKnownParties.sort(java.util.Comparator.comparing(PartyListScreen::isFull));
 		scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, lastKnownParties.size() - VISIBLE_ROWS)));
+	}
+
+	private static boolean isFull(PartyInfo party) {
+		return party.size() >= party.max();
 	}
 
 	@Override
