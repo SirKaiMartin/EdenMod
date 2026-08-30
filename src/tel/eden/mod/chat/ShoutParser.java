@@ -14,7 +14,8 @@ import net.minecraft.network.chat.Component;
  * </pre>
  *
  * <p>The rank badge between the name and {@code shouts:} is a
- * custom-font glyph stripped by {@link ChatText#normalize}; the name is hover-resolved.
+ * custom-font glyph stripped by {@link ChatText#normalizeWhitespace}; the name is
+ * hover-resolved.
  */
 public final class ShoutParser {
 	// The name group excludes ':' so a copied shout pasted into another channel — which
@@ -43,7 +44,7 @@ public final class ShoutParser {
 		if (!isCandidate(message)) {
 			return Optional.empty();
 		}
-		Matcher matcher = SHOUT.matcher(ChatText.normalize(message.getString()));
+		Matcher matcher = SHOUT.matcher(ChatText.normalizeWhitespace(message.getString()));
 		if (!matcher.matches()) {
 			return Optional.empty();
 		}
@@ -59,7 +60,7 @@ public final class ShoutParser {
 		if (!isCandidate(message)) {
 			return Optional.empty();
 		}
-		Matcher matcher = SHOUT.matcher(ChatText.normalize(message.getString()));
+		Matcher matcher = SHOUT.matcher(ChatText.normalizeWhitespace(message.getString()));
 		if (!matcher.matches()) {
 			return Optional.empty();
 		}
