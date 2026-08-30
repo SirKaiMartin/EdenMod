@@ -8,4 +8,7 @@ import java.util.List;
  * ratings ({@code conflict}), and who is heading there.
  */
 public record WarBoardEntry(String territory, String defense, boolean conflict, List<WarGoer> going) {
+	public WarBoardEntry {
+		going = List.copyOf(going);
+	}
 }

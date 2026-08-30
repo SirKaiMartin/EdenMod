@@ -45,9 +45,9 @@ public final class TerritoryData {
 	private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
 
 	/** Territory name to bounding box {@code [minX, minZ, maxX, maxZ]} from the API. */
-	private static volatile Map<String, int[]> rects = new HashMap<>();
+	private static volatile Map<String, int[]> rects = Map.of();
 	/** Every territory name from the API, for war-detection validation. */
-	private static volatile List<String> names = new ArrayList<>();
+	private static volatile List<String> names = List.of();
 	/** Territory name to defense rating ("Very Low".."Very High"), from advancements. */
 	private static final Map<String, String> defenses = new HashMap<>();
 
@@ -94,7 +94,8 @@ public final class TerritoryData {
 
 	/** Bounding box {@code [minX, minZ, maxX, maxZ]} for a territory, or null. */
 	public static int[] rect(String territory) {
-		return rects.get(territory);
+		int[] rect = rects.get(territory);
+		return rect == null ? null : rect.clone();
 	}
 
 	/** Centre {@code [x, z]} of a territory, or null if unknown. */
@@ -141,8 +142,10 @@ public final class TerritoryData {
 			int ez = loc.getAsJsonArray("end").get(1).getAsInt();
 			newRects.put(name, new int[]{Math.min(sx, ex), Math.min(sz, ez), Math.max(sx, ex), Math.max(sz, ez)});
 		}
-		rects = newRects;
-		names = newNames;
+		// Publish complete immutable snapshots: the HTTP callback runs off-thread while
+		// render/tick consumers read these fields on the client thread.
+		rects = Map.copyOf(newRects);
+		names = List.copyOf(newNames);
 	}
 
 	private static void scrapeAdvancements() {

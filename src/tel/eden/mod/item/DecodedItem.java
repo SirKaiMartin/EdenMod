@@ -14,6 +14,9 @@ import java.util.List;
  * @param powderSlots    the number of powder slots on the item
  */
 public record DecodedItem(String name, String tier, int tierColor, String type, float overallPercent, List<Identification> identifications, int powderSlots) {
+	public DecodedItem {
+		identifications = List.copyOf(identifications);
+	}
 
 	/** Whether an overall roll quality is present (gear with variable stats). */
 	public boolean hasOverall() {
