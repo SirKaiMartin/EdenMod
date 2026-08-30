@@ -140,6 +140,9 @@ public final class EdenModClient implements ClientModInitializer {
 		t.setDaemon(true);
 		return t;
 	});
+	// Invalidates delayed party commands when the client changes server/world, so invites
+	// queued for one session can never be delivered to the next connection.
+	private final java.util.concurrent.atomic.AtomicInteger partyCommandGeneration = new java.util.concurrent.atomic.AtomicInteger();
 	// Deterministic per-occurrence index so rapid identical bank events stay distinct.
 	// Short window: only the current burst counts, so stale earlier deposits can't
 	// make different clients assign divergent seqs (which duplicated Discord posts).
@@ -414,6 +417,7 @@ public final class EdenModClient implements ClientModInitializer {
 		});
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+			partyCommandGeneration.incrementAndGet();
 			loginPending = true;
 			// Fresh connection: drop the packet-captured scoreboard and all war-board state
 			// so a previous world/session's timers, defence, and heads never linger.
@@ -1246,7 +1250,11 @@ public final class EdenModClient implements ClientModInitializer {
 
 	/** Send one server command after {@code delayMs}, on the client thread. */
 	private void sendServerCommandLater(String command, long delayMs) {
+		int generation = partyCommandGeneration.get();
 		partyCommandExecutor.schedule(() -> Minecraft.getInstance().execute(() -> {
+			if (partyCommandGeneration.get() != generation) {
+				return;
+			}
 			var connection = Minecraft.getInstance().getConnection();
 			if (connection != null) {
 				connection.sendCommand(command);
@@ -1913,6 +1921,7 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	private synchronized void disconnect() {
+		partyCommandGeneration.incrementAndGet();
 		onWynncraft = false;
 		loginPending = false;
 		bridgeStatus = BridgeStatus.UNKNOWN;
