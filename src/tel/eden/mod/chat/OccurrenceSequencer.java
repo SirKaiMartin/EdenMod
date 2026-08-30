@@ -2,6 +2,7 @@ package tel.eden.mod.chat;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 /**
@@ -34,10 +35,8 @@ public final class OccurrenceSequencer {
 	/** Record an occurrence of {@code signature} and return its index in the window. */
 	public synchronized int next(String signature) {
 		long now = System.currentTimeMillis();
+		purgeExpired(now);
 		ArrayDeque<Long> times = seen.computeIfAbsent(signature, k -> new ArrayDeque<>());
-		while (!times.isEmpty() && now - times.peekFirst() > windowMillis) {
-			times.pollFirst();
-		}
 		// A near-instant repeat is the same line emitted twice; reuse its index so the
 		// backend dedups it instead of treating it as a second deposit.
 		if (!times.isEmpty() && now - times.peekLast() < REEMIT_GUARD_MS) {
@@ -45,5 +44,19 @@ public final class OccurrenceSequencer {
 		}
 		times.addLast(now);
 		return times.size();
+	}
+
+	/** Drop expired occurrences and their signatures so unique chat lines cannot accumulate forever. */
+	private void purgeExpired(long now) {
+		Iterator<ArrayDeque<Long>> iterator = seen.values().iterator();
+		while (iterator.hasNext()) {
+			ArrayDeque<Long> times = iterator.next();
+			while (!times.isEmpty() && now - times.peekFirst() > windowMillis) {
+				times.pollFirst();
+			}
+			if (times.isEmpty()) {
+				iterator.remove();
+			}
+		}
 	}
 }
