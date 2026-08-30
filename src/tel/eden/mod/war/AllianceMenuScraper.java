@@ -60,6 +60,7 @@ public final class AllianceMenuScraper {
 	// the backend somehow missed is never withheld for matching what we last sent.
 	private static List<Ally> lastSent = List.of();
 	private static boolean menuOpen;
+	private static boolean disconnectedWarningLogged;
 	// The reading being waited on, and when it first appeared. A roster is only relayed
 	// once it has read the same for ROSTER_STABLE_MS, which is what keeps a half-delivered
 	// menu from replacing the stored roster with a shorter one.
@@ -71,6 +72,7 @@ public final class AllianceMenuScraper {
 	public static void onTick(Minecraft mc) {
 		if (!(mc.screen instanceof AbstractContainerScreen<?> screen) || !isDiplomacyTitle(screen)) {
 			menuOpen = false;
+			disconnectedWarningLogged = false;
 			return;
 		}
 		AbstractContainerMenu menu = screen.getMenu();
@@ -118,26 +120,32 @@ public final class AllianceMenuScraper {
 		if (!firstReadOfThisMenu && allies.equals(lastSent)) {
 			return;
 		}
-		lastSent = allies;
 		BridgeWebSocketClient socket = EdenModClient.instance().socket();
 		if (socket == null) {
-			LOGGER.warn("Read {} allies but the bridge is not connected: {}", allies.size(), allies);
+			if (!disconnectedWarningLogged) {
+				LOGGER.warn("Read {} allies but the bridge is not connected: {}", allies.size(), allies);
+				disconnectedWarningLogged = true;
+			}
 			return;
 		}
-		LOGGER.info("Alliance roster read ({}): {}", allies.size(), allies);
+		disconnectedWarningLogged = false;
 		List<String> names = new ArrayList<>();
 		List<String> tags = new ArrayList<>();
 		for (Ally ally : allies) {
 			names.add(ally.name());
 			tags.add(ally.tag());
 		}
-		socket.sendGuildAlliances(names, tags);
+		if (socket.sendGuildAlliances(names, tags)) {
+			lastSent = allies;
+			LOGGER.info("Alliance roster read ({}): {}", allies.size(), allies);
+		}
 	}
 
 	/** Forget the last relayed roster (world change / disconnect). */
 	public static void reset() {
 		lastSent = List.of();
 		menuOpen = false;
+		disconnectedWarningLogged = false;
 		pendingRoster = List.of();
 		pendingSince = 0;
 	}
