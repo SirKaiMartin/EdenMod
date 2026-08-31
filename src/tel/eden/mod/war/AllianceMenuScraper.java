@@ -16,18 +16,18 @@ import tel.eden.mod.EdenModClient;
 import tel.eden.mod.net.BridgeWebSocketClient;
 
 /**
- * Reads the guild's alliance roster from the in-game {@code Diplomacy} menu and relays it
+ * Reads the guild's alliance list from the in-game {@code Diplomacy} menu and relays it
  * to the backend, which shows it on the reward-storage message.
  *
- * <p>The menu is the game's own view of the roster, so a reading replaces whatever the
+ * <p>The menu is the game's own view of the alliance list, so a reading replaces whatever the
  * backend holds. Guild chat also announces alliances forming and being revoked (the
- * backend applies those as they arrive), but only this menu can correct a roster that has
+ * backend applies those as they arrive), but only this menu can correct an alliance list that has
  * drifted — a member who was offline for an alliance change never saw the chat line.
  *
  * <p>Parsing is all-or-nothing. A slot that doesn't look like an alliance entry means the
- * layout isn't what we expect, and a partial roster would silently drop real allies once
+ * layout isn't what we expect, and a partial list would silently drop real allies once
  * it replaced the stored one, so an unrecognised menu is discarded instead. It is only
- * sent when the roster actually changes, since the menu can sit open for a while.
+ * sent when the alliance list actually changes, since the menu can sit open for a while.
  */
 public final class AllianceMenuScraper {
 	private AllianceMenuScraper() {
@@ -37,7 +37,7 @@ public final class AllianceMenuScraper {
 	private static final Pattern TITLE = Pattern.compile("^[A-Za-z][A-Za-z ]*: Diplomacy$");
 	// An allied-guild entry names the guild and its tag, e.g. "Sequoia [SEQ]" — the item is a
 	// banner whose display name carries both. Tags are matched loosely: parsing is
-	// all-or-nothing, so a tag shape we failed to anticipate would cost the entire roster
+	// all-or-nothing, so a tag shape we failed to anticipate would cost the entire list
 	// rather than one entry.
 	private static final Pattern ALLY_ITEM = Pattern.compile("^(.+?) \\[([A-Za-z0-9]{2,5})]$");
 	// The display name arrives styled ("§a§lSequoia [SEQ]"), and the codes are part of the
@@ -47,28 +47,28 @@ public final class AllianceMenuScraper {
 	// The slots the alliance entries occupy; anything outside them is menu furniture.
 	private static final int[] ALLY_SLOTS = {2, 3, 4, 5, 6, 7, 8};
 	private static final int MAX_ALLIES = 16;
-	// How long a reading has to stay identical before it counts as the settled roster.
+	// How long a reading has to stay identical before it counts as the settled list.
 	// Comfortably longer than the gap between the packets that fill the menu, and short
 	// enough that it still lands while the menu is open.
-	private static final long ROSTER_STABLE_MS = 750L;
+	private static final long ALLIANCE_STABLE_MS = 750L;
 	private static final int MAX_NAME_LENGTH = 64;
 	// Hotbar + main inventory, appended to every container menu after its own slots.
 	private static final int PLAYER_INVENTORY_SLOTS = 36;
 
-	// Last roster relayed, so a menu left open doesn't re-send every tick. Kept across
-	// closes as a dedup key only — reopening the menu re-reports regardless, so a roster
+	// Last alliance list relayed, so a menu left open doesn't re-send every tick. Kept across
+	// closes as a dedup key only — reopening the menu re-reports regardless, so a list
 	// the backend somehow missed is never withheld for matching what we last sent.
 	private static List<Ally> lastSent = List.of();
 	private static boolean menuOpen;
 	private static boolean disconnectedWarningLogged;
-	// The reading being waited on, and when it first appeared. A roster is only relayed
-	// once it has read the same for ROSTER_STABLE_MS, which is what keeps a half-delivered
-	// menu from replacing the stored roster with a shorter one.
-	private static List<Ally> pendingRoster = List.of();
+	// The reading being waited on, and when it first appeared. A reading is only relayed
+	// once it has read the same for ALLIANCE_STABLE_MS, which is what keeps a half-delivered
+	// menu from replacing the stored list with a shorter one.
+	private static List<Ally> pendingAllies = List.of();
 	private static long pendingSince;
 	private static final EdenLogger LOGGER = EdenLogger.get();
 
-	/** Client-thread tick: if the Diplomacy menu is open, read and relay the roster. */
+	/** Client-thread tick: if the Diplomacy menu is open, read and relay the alliance list. */
 	public static void onTick(Minecraft mc) {
 		if (!(mc.screen instanceof AbstractContainerScreen<?> screen) || !isDiplomacyTitle(screen)) {
 			menuOpen = false;
@@ -85,7 +85,7 @@ public final class AllianceMenuScraper {
 		// The screen exists from the moment the open packet lands, but slot contents
 		// arrive in a later packet, so the first ticks see an entirely empty menu. An
 		// empty alliance section then reads as "no allies" and would wipe the stored
-		// roster. The menu's own furniture (borders, back button) fills slots outside the
+		// list. The menu's own furniture (borders, back button) fills slots outside the
 		// alliance range, so any occupied slot there means the contents have landed.
 		if (!hasContents(menu)) {
 			return;
@@ -98,7 +98,7 @@ public final class AllianceMenuScraper {
 		// the backend ignored it".
 		if (allies == null) {
 			if (firstReadOfThisMenu) {
-				LOGGER.warn("Diplomacy menu did not parse; alliance roster not sent");
+				LOGGER.warn("Diplomacy menu did not parse; alliance list not sent");
 				menuOpen = true;
 			}
 			return;
@@ -107,14 +107,14 @@ public final class AllianceMenuScraper {
 		// Wynncraft fills the alliance slots over more than one packet, and re-pushes them
 		// while an ally is being added or removed. A slot that has not arrived yet reads
 		// exactly like one whose ally was just removed, so a reading taken mid-update is a
-		// short roster — and since a snapshot *replaces* what the backend holds, acting on
+		// short list — and since a snapshot *replaces* what the backend holds, acting on
 		// one deletes real allies. So a reading has to hold still before it is believed.
-		if (!allies.equals(pendingRoster)) {
-			pendingRoster = allies;
+		if (!allies.equals(pendingAllies)) {
+			pendingAllies = allies;
 			pendingSince = System.currentTimeMillis();
 			return;
 		}
-		if (System.currentTimeMillis() - pendingSince < ROSTER_STABLE_MS) {
+		if (System.currentTimeMillis() - pendingSince < ALLIANCE_STABLE_MS) {
 			return;
 		}
 		if (!firstReadOfThisMenu && allies.equals(lastSent)) {
@@ -137,16 +137,16 @@ public final class AllianceMenuScraper {
 		}
 		if (socket.sendGuildAlliances(names, tags)) {
 			lastSent = allies;
-			LOGGER.info("Alliance roster read ({}): {}", allies.size(), allies);
+			LOGGER.info("Alliance list read ({}): {}", allies.size(), allies);
 		}
 	}
 
-	/** Forget the last relayed roster (world change / disconnect). */
+	/** Forget the last relayed alliance list (world change / disconnect). */
 	public static void reset() {
 		lastSent = List.of();
 		menuOpen = false;
 		disconnectedWarningLogged = false;
-		pendingRoster = List.of();
+		pendingAllies = List.of();
 		pendingSince = 0;
 	}
 
@@ -184,7 +184,7 @@ public final class AllianceMenuScraper {
 
 	/**
 	 * Allied guilds in slot order, or null when the menu doesn't parse. Empty slots are
-	 * alliance slots the guild hasn't filled, which is a valid (empty) roster.
+	 * alliance slots the guild hasn't filled, which is a valid (empty) list.
 	 */
 	private static List<Ally> parseAllies(AbstractContainerMenu menu) {
 		Map<String, Ally> unique = new LinkedHashMap<>();

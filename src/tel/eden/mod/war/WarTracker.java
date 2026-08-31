@@ -42,13 +42,13 @@ public final class WarTracker {
 	// The fight itself starting ("... The battle has begun!") — capture opens here, so we
 	// only sample who's actually at the tower, not who saw the earlier countdown broadcast.
 	private static final String WAR_START_PHRASE = "battle has begun";
-	// War fighters cluster on the tower; keep the radius tight to exclude passers-by.
+	// Players fighting the war cluster on the tower; keep the radius tight to exclude passers-by.
 	private static final int CAPTURE_RADIUS = 45;
 	// A player seen in even one sample counts — very short wars barely last a tick.
 	private static final int MIN_SIGHTINGS = 1;
 	// How often (in ticks) to sample nearby players while capturing (~2x/second).
 	private static final int SAMPLE_INTERVAL_TICKS = 10;
-	// Keep sampling this long after the war ends: the tower bar and the roster linger a
+	// Keep sampling this long after the war ends: the tower bar and the nearby players linger a
 	// second or two post-war, which is where a sub-second war's attendance comes from.
 	private static final long POST_WAR_GRACE_MS = 2500L;
 	// If no tower bar appears within this long of the start, we aren't in this war.
@@ -90,7 +90,7 @@ public final class WarTracker {
 			currentWar = null;
 			graceEndsAt = 0;
 			pendingWon = false;
-			// Reset so the very next tick samples the initial roster (short wars need it).
+			// Reset so the very next tick samples players immediately (short wars need it).
 			tickCounter = 0;
 			synchronized (sightings) {
 				sightings.clear();
@@ -120,7 +120,7 @@ public final class WarTracker {
 		}
 		// First tick (counter 0) samples immediately, then every SAMPLE_INTERVAL_TICKS.
 		if (tickCounter % SAMPLE_INTERVAL_TICKS == 0) {
-			sampleNearbyFighters();
+			sampleNearbyPlayers();
 		}
 		tickCounter++;
 		// After the war ends we keep sampling through the grace window, then report.
@@ -131,7 +131,7 @@ public final class WarTracker {
 
 	/**
 	 * Called by {@link WarDPS} when a war ends; opens a short post-war grace window (we keep
-	 * sampling the lingering roster) after which attendance is reported — only on a win.
+	 * sampling the lingering players) after which attendance is reported — only on a win.
 	 */
 	public static void onWarEnded(boolean won) {
 		if (!capturing) {
@@ -174,7 +174,7 @@ public final class WarTracker {
 		return null;
 	}
 
-	private static void sampleNearbyFighters() {
+	private static void sampleNearbyPlayers() {
 		Minecraft mc = Minecraft.getInstance();
 		Player self = mc.player;
 		AABB box = new AABB(self.getX() - CAPTURE_RADIUS, self.getY() - CAPTURE_RADIUS, self.getZ() - CAPTURE_RADIUS, self.getX() + CAPTURE_RADIUS, self.getY() + CAPTURE_RADIUS, self.getZ() + CAPTURE_RADIUS);

@@ -72,6 +72,7 @@ public final class AspectsPayoutScreen extends EdenReferenceScreen {
 
 		payOutButton = this.addRenderableWidget(Button.builder(Component.literal("Pay Out"), b -> payOut()).bounds(layout.x(15), layout.y(288), layout.w(190), layout.h(20)).build());
 		this.addRenderableWidget(Button.builder(Component.literal("Back"), b -> this.minecraft.setScreen(parent)).bounds(layout.x(215), layout.y(288), layout.w(190), layout.h(20)).build());
+		this.addRenderableWidget(Button.builder(Component.literal("Giveaways →"), b -> this.minecraft.setScreen(new AspectGiveawayScreen(parent, mod))).bounds(layout.x(315), layout.y(8), layout.w(90), layout.h(16)).build());
 
 		requestPending();
 		refreshSnapshot();
@@ -131,7 +132,7 @@ public final class AspectsPayoutScreen extends EdenReferenceScreen {
 	}
 
 	/**
-	 * Whether a row can be selected. The guild roster loads asynchronously, so an
+	 * Whether a row can be selected. The guild member list loads asynchronously, so an
 	 * unknown member is treated as selectable rather than locking every row until the
 	 * API answers; only a member we positively know joined too recently is blocked.
 	 * A genuinely non-member selection is caught by the batch's own validation.
@@ -263,7 +264,7 @@ public final class AspectsPayoutScreen extends EdenReferenceScreen {
 				break;
 			}
 			PendingEntry entry = rows.get(index);
-			// One roster lookup each per row per frame; both were previously repeated
+			// One member-list lookup each per row per frame; both were previously repeated
 			// two or three times on the way through this loop.
 			boolean tooNew = isTooNew(entry.name());
 			String rank = rankOf(entry.name());

@@ -56,6 +56,13 @@ public final class BridgeWebSocketClient {
 		void onAspectsPending(java.util.List<PendingEntry> entries, String error, String color);
 
 		/**
+		 * Response to an {@code aspectGiveawayRequest}: the whole current member list (the
+		 * screen filters it) plus the guild's current aspect stock, or an {@code error}
+		 * (e.g. not a Chief) when the request was refused.
+		 */
+		void onAspectGiveaway(java.util.List<GiveawayCandidate> candidates, int storageAspects, String error, String color);
+
+		/**
 		 * Response to a {@code rewardDeductRequest}: on success {@code error} is empty
 		 * and target/kind/amount/remaining carry the display-unit values the backend
 		 * applied. On failure only {@code error} is set — the reply carries no target,
@@ -213,8 +220,8 @@ public final class BridgeWebSocketClient {
 	}
 
 	/**
-	 * Relay the guild's alliance roster, read whole from the in-game Diplomacy menu. The
-	 * backend replaces its stored roster with this, so it is only ever sent for a menu the
+	 * Relay the guild's alliance list, read whole from the in-game Diplomacy menu. The
+	 * backend replaces its stored list with this, so it is only ever sent for a menu the
 	 * mod parsed in full.
 	 *
 	 * @return whether the message was queued on a connected socket
@@ -248,7 +255,7 @@ public final class BridgeWebSocketClient {
 	 * for the allied guild members Wynncraft omits. Only a client that was in the raid can
 	 * observe them, so the backend deliberately keeps them out of its cross-client
 	 * consensus (nobody else can corroborate what they never saw), verifies each against
-	 * the alliance roster, and uses the survivors only to complete the party for display.
+	 * the alliance list, and uses the survivors only to complete the party for display.
 	 */
 	public void sendRaidCompletion(java.util.List<String> party, String raidName, int aspects, int emeralds, String guildExp, java.util.List<String> extraPlayers) {
 		WebSocket current = socket;
@@ -304,6 +311,11 @@ public final class BridgeWebSocketClient {
 	/** Ask the backend for each member's pending aspects (Chiefs only). */
 	public void sendAspectsPendingRequest() {
 		sendType("aspectsPendingRequest");
+	}
+
+	/** Ask the backend for the member list + aspect stock for the giveaway screen (Chiefs only). */
+	public void sendAspectGiveawayRequest() {
+		sendType("aspectGiveawayRequest");
 	}
 
 	/**
@@ -810,6 +822,7 @@ public final class BridgeWebSocketClient {
 				case "logoutNotice" -> sink.onLogoutNotice(get(obj, "username"), get(obj, "color"));
 				case "onlineList" -> sink.onOnlineList(getStringArray(obj, "users"), get(obj, "color"));
 				case "aspectsPendingReply" -> sink.onAspectsPending(parsePendingEntries(obj), get(obj, "error"), get(obj, "color"));
+				case "aspectGiveawayReply" -> sink.onAspectGiveaway(parseGiveawayCandidates(obj), getInt(obj, "storageAspects", 0), get(obj, "error"), get(obj, "color"));
 				case "rewardDeductReply" -> sink.onRewardDeductReply(get(obj, "target"), get(obj, "rewardKind"), getInt(obj, "amount", 0), getInt(obj, "remaining", 0), get(obj, "error"), get(obj, "color"));
 				case "partyUpdate" -> sink.onPartyUpdate(get(obj, "event"), get(obj, "actor"), parseParty(obj), get(obj, "color"));
 				case "partyListReply" -> sink.onPartyList(parsePartyList(obj), get(obj, "color"));
@@ -927,6 +940,14 @@ public final class BridgeWebSocketClient {
 		}
 	}
 
+	private static long getLong(JsonObject obj, String key, long fallback) {
+		try {
+			return obj.has(key) && !obj.get(key).isJsonNull() ? obj.get(key).getAsLong() : fallback;
+		} catch (RuntimeException e) {
+			return fallback;
+		}
+	}
+
 	private static PartyInfo parseParty(JsonObject obj) {
 		return new PartyInfo(getInt(obj, "id", 0), get(obj, "raid"), get(obj, "host"), getStringArray(obj, "members"), getInt(obj, "max", 4), get(obj, "note"));
 	}
@@ -986,6 +1007,19 @@ public final class BridgeWebSocketClient {
 				if (element.isJsonObject()) {
 					JsonObject member = element.getAsJsonObject();
 					out.add(new PendingEntry(get(member, "name"), getInt(member, "aspects", 0)));
+				}
+			}
+		}
+		return out;
+	}
+
+	private static java.util.List<GiveawayCandidate> parseGiveawayCandidates(JsonObject obj) {
+		java.util.List<GiveawayCandidate> out = new java.util.ArrayList<>();
+		if (obj.has("members") && obj.get("members").isJsonArray()) {
+			for (var element : obj.get("members").getAsJsonArray()) {
+				if (element.isJsonObject()) {
+					JsonObject member = element.getAsJsonObject();
+					out.add(new GiveawayCandidate(get(member, "name"), getLong(member, "contributedXp", 0L), get(member, "rank"), getLong(member, "lastSeenEpochMs", 0L), getBool(member, "blocked")));
 				}
 			}
 		}

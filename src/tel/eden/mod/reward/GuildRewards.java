@@ -223,7 +223,7 @@ public final class GuildRewards {
 	}
 
 	/**
-	 * A roster map that matches names case-insensitively while keeping each member's
+	 * A member map that matches names case-insensitively while keeping each member's
 	 * original spelling as the key. Making that a property of the map itself means no
 	 * lookup site has to remember to normalise (and can't trip over locale-dependent
 	 * {@code toLowerCase} in the process).
@@ -348,7 +348,7 @@ public final class GuildRewards {
 				chat(name + " has not been in the guild for a week, and is not eligible " + "for rewards.", ChatFormatting.YELLOW);
 				return;
 			}
-			runSingle(name, type, requested, dump, false);
+			runSingle(name, type, requested, dump, false, true);
 		} catch (Exception e) {
 			LOGGER.warn("Gift run failed", e);
 			chat("Gift failed: " + e.getMessage(), ChatFormatting.RED);
@@ -366,8 +366,13 @@ public final class GuildRewards {
 	 *
 	 * <p>{@code autoDeduct} takes the handout off the member's pending total on the
 	 * backend instead of only offering the deduction as a clickable command.
+	 *
+	 * <p>{@code settlesPending} is false for a handout that isn't settling anyone's
+	 * owed balance at all (a giveaway from bank surplus) — it skips the
+	 * deduction/fallback-command step entirely rather than offering one, since there
+	 * is nothing pending to settle.
 	 */
-	private boolean runSingle(String name, RewardType type, int requested, boolean dump, boolean autoDeduct) {
+	private boolean runSingle(String name, RewardType type, int requested, boolean dump, boolean autoDeduct, boolean settlesPending) {
 		if (!openRewardsMenu()) {
 			chat("Couldn't open the guild manage menu — try again.", ChatFormatting.RED);
 			return false;
@@ -424,7 +429,7 @@ public final class GuildRewards {
 		}
 		// A dump empties the guild bank into one member and isn't settling what anyone
 		// is owed, so it never offers (or performs) a pending-balance deduction.
-		if (type.resetKind != null && !dump) {
+		if (type.resetKind != null && !dump && settlesPending) {
 			DeductReporter currentDeductReporter = deductReporter;
 			if (currentDeductReporter != null) {
 				currentDeductReporter.report(name, type.resetKind, displayUnits(type, amount), autoDeduct);
@@ -490,11 +495,24 @@ public final class GuildRewards {
 	public void payoutAspects(List<PayoutTarget> targets, boolean autoDeduct) {
 		List<PayoutTarget> copy = List.copyOf(targets);
 		if (!copy.isEmpty()) {
-			worker.submit(() -> batchRun(copy, autoDeduct));
+			worker.submit(() -> batchRun(copy, autoDeduct, true));
 		}
 	}
 
-	private void batchRun(List<PayoutTarget> requested, boolean autoDeduct) {
+	/**
+	 * Flat-gift aspects to several members in one go (off-thread) — a bonus handout
+	 * from bank surplus, not settling anyone's owed balance. Shares every safety check
+	 * {@link #payoutAspects} has (Chief/member-list/cooldown validation, the live guild-stock
+	 * pre-flight check) but never touches the backend's pending-balance bookkeeping.
+	 */
+	public void giveaway(List<PayoutTarget> targets) {
+		List<PayoutTarget> copy = List.copyOf(targets);
+		if (!copy.isEmpty()) {
+			worker.submit(() -> batchRun(copy, false, false));
+		}
+	}
+
+	private void batchRun(List<PayoutTarget> requested, boolean autoDeduct, boolean settlesPending) {
 		giftInProgress = true;
 		try {
 			if (!isChief()) {
@@ -502,12 +520,12 @@ public final class GuildRewards {
 				return;
 			}
 			if (members.isEmpty()) {
-				chat("The guild roster hasn't loaded yet — try again in a moment.", ChatFormatting.RED);
+				chat("The guild member list hasn't loaded yet — try again in a moment.", ChatFormatting.RED);
 				return;
 			}
 			// Validate every target up front, before any aspects move. A member the
-			// roster doesn't know is dropped from the batch rather than aborting it:
-			// the roster refreshes on its own schedule, so an unknown name usually
+			// member list doesn't know is dropped from the batch rather than aborting it:
+			// the member list refreshes on its own schedule, so an unknown name usually
 			// means a stale snapshot, and one such name shouldn't block everyone else.
 			// A positively-too-new member is a different matter — the screen greys
 			// those rows out, so one reaching us means the selection raced a refresh,
@@ -535,7 +553,7 @@ public final class GuildRewards {
 				return;
 			}
 			if (!unknown.isEmpty()) {
-				chat("Skipping (not in the guild roster): " + String.join(", ", unknown), ChatFormatting.YELLOW);
+				chat("Skipping (not a guild member): " + String.join(", ", unknown), ChatFormatting.YELLOW);
 			}
 			if (total <= 0) {
 				chat("Nothing to pay out.", ChatFormatting.YELLOW);
@@ -554,14 +572,15 @@ public final class GuildRewards {
 				return;
 			}
 
-			chat("Paying out " + total + " aspects to " + targets.size() + " members...", ChatFormatting.GREEN);
+			String verb = settlesPending ? "Paying out" : "Gifting";
+			chat(verb + " " + total + " aspects to " + targets.size() + " members...", ChatFormatting.GREEN);
 			List<String> skipped = new ArrayList<>();
 			int paid = 0;
 			int done = 0;
 			try {
 				for (PayoutTarget target : targets) {
 					done++;
-					if (runSingle(target.name(), RewardType.ASPECT, target.aspects(), false, autoDeduct)) {
+					if (runSingle(target.name(), RewardType.ASPECT, target.aspects(), false, autoDeduct, settlesPending)) {
 						paid++;
 					} else {
 						skipped.add(target.name());
@@ -569,10 +588,10 @@ public final class GuildRewards {
 				}
 			} catch (Exception e) {
 				LOGGER.warn("Batch payout interrupted", e);
-				chat("Payout stopped after " + done + " of " + targets.size() + " members: " + e.getMessage(), ChatFormatting.RED);
+				chat("Stopped after " + done + " of " + targets.size() + " members: " + e.getMessage(), ChatFormatting.RED);
 				return;
 			}
-			chat("Payout complete: " + paid + "/" + targets.size() + " members paid.", ChatFormatting.GREEN);
+			chat((settlesPending ? "Payout" : "Giveaway") + " complete: " + paid + "/" + targets.size() + " members paid.", ChatFormatting.GREEN);
 			if (!skipped.isEmpty()) {
 				chat("Skipped: " + String.join(", ", skipped), ChatFormatting.RED);
 			}

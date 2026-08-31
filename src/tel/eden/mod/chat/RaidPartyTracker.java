@@ -47,7 +47,7 @@ import tel.eden.mod.war.ScoreboardCapture;
  * <p>What proximity cannot rule out is that Wynncraft dresses some NPCs as players, and a
  * stationary one is present for every sample of the raid. So this class does not try to
  * pick the allies; it produces a ranked shortlist and the backend picks, because deciding
- * needs the guild roster and the player API. That also settles the NPCs: an NPC is not a
+ * needs the guild member list and the player API. That also settles the NPCs: an NPC is not a
  * Wynncraft account, so the ally lookup finds nothing and drops it.
  */
 public final class RaidPartyTracker {
@@ -141,7 +141,7 @@ public final class RaidPartyTracker {
 	 * <p>This is a shortlist, not an answer: it is everyone present long enough to have run
 	 * the raid, minus those the announcement already named. The backend decides which of
 	 * them are really allies and caps the party at {@link #RAID_PARTY_SIZE}, because that
-	 * needs the guild roster and the player API, neither of which the client has.
+	 * needs the guild member list and the player API, neither of which the client has.
 	 *
 	 * <p>Empty when the completion already names a full party, when nothing was sampled
 	 * (this client was not in the raid), or when the tally has gone stale. Comparison with
