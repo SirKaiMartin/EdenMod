@@ -166,7 +166,7 @@ public final class PartyManageScreen extends EdenReferenceScreen {
 		super.render(g, scaledMouseX, scaledMouseY, delta);
 
 		g.drawCenteredString(this.font, this.title, layout.centerX(), layout.y(12), 0xFFFFFFFF);
-		g.drawCenteredString(this.font, "Party Roster (" + (realMembers() + filledSlots) + "/" + maxSize + ")", layout.x(87), layout.y(20), 0xFF55FF55);
+		g.drawCenteredString(this.font, "Party Members (" + (realMembers() + filledSlots) + "/" + maxSize + ")", layout.x(87), layout.y(20), 0xFF55FF55);
 
 		int yPos = layout.y(40);
 		int headSize = Math.max(8, layout.h(12));

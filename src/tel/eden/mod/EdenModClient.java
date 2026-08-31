@@ -39,6 +39,7 @@ import tel.eden.mod.item.ItemStringDetector;
 import tel.eden.mod.item.WynntilsItemDecoder;
 import tel.eden.mod.net.BridgeWebSocketClient;
 import tel.eden.mod.net.PartyInfo;
+import tel.eden.mod.net.GiveawayCandidate;
 import tel.eden.mod.net.PendingEntry;
 import tel.eden.mod.net.WarBoardEntry;
 import tel.eden.mod.net.WarCountEntry;
@@ -210,6 +211,11 @@ public final class EdenModClient implements ClientModInitializer {
 	// replies would leave a reader's cached generation matching the live one, and
 	// it would sit on a stale list believing it was current.
 	private final java.util.concurrent.atomic.AtomicInteger pendingAspectsGeneration = new java.util.concurrent.atomic.AtomicInteger();
+	// Same shape as the pending-aspects trio above, for AspectGiveawayScreen's member list.
+	private volatile java.util.List<GiveawayCandidate> knownGiveawayCandidates = java.util.List.of();
+	private volatile int giveawayStorageAspects;
+	private volatile String giveawayError;
+	private final java.util.concurrent.atomic.AtomicInteger giveawayGeneration = new java.util.concurrent.atomic.AtomicInteger();
 	// GitHub update check: run once per game session; the prompt offers a one-click
 	// download (applied on game close) and a link to the release page.
 	private final UpdateChecker updateChecker = new UpdateChecker();
@@ -347,6 +353,26 @@ public final class EdenModClient implements ClientModInitializer {
 	 */
 	public int pendingAspectsGeneration() {
 		return pendingAspectsGeneration.get();
+	}
+
+	/** The current guild members for the aspect-giveaway screen, as of the last reply. */
+	public java.util.List<GiveawayCandidate> knownGiveawayCandidates() {
+		return knownGiveawayCandidates;
+	}
+
+	/** The guild's aspect stock as of the last giveaway reply. */
+	public int giveawayStorageAspects() {
+		return giveawayStorageAspects;
+	}
+
+	/** The error from the last giveaway reply, or {@code null} if it succeeded. */
+	public String giveawayError() {
+		return giveawayError;
+	}
+
+	/** Bumped on every giveaway reply; 0 means none has arrived yet. */
+	public int giveawayGeneration() {
+		return giveawayGeneration.get();
 	}
 
 	/** The guild reward helper (rank lookups + gifting). */
@@ -670,6 +696,15 @@ public final class EdenModClient implements ClientModInitializer {
 				}
 
 				@Override
+				public void onAspectGiveaway(java.util.List<GiveawayCandidate> candidates, int storageAspects, String error, String color) {
+					// Generation last, same reasoning as onAspectsPending above.
+					knownGiveawayCandidates = java.util.List.copyOf(candidates);
+					giveawayStorageAspects = storageAspects;
+					giveawayError = (error == null || error.isEmpty()) ? null : error;
+					giveawayGeneration.incrementAndGet();
+				}
+
+				@Override
 				public void onRewardDeductReply(String target, String rewardKind, int amount, int remaining, String error, String color) {
 					if (error != null && !error.isEmpty()) {
 						displayColoredDirect(color, () -> DiscordChatFormatter.systemLine("Couldn't deduct pending rewards: " + error, ChatFormatting.RED));
@@ -979,9 +1014,9 @@ public final class EdenModClient implements ClientModInitializer {
 	private int deductReward(FabricClientCommandSource source, String rewardKind, String member, int amount) {
 		guildRewards.ensureFresh(playerName());
 		// Courtesy check only — the backend authorises by the linked account either way.
-		// Skipped while the roster is still loading, so a cold rank cache can't refuse a
+		// Skipped while the member list is still loading, so a cold rank cache can't refuse a
 		// Chief; the unknown-member case is likewise left to the backend, whose view of
-		// the guild is fresher than the cached roster.
+		// the guild is fresher than the cached member list.
 		if (!guildRewards.memberNames().isEmpty() && !guildRewards.isChief()) {
 			source.sendFeedback(Component.literal("Only guild Chiefs can deduct pending rewards.").withStyle(ChatFormatting.RED));
 			return 0;
