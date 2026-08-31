@@ -2020,6 +2020,12 @@ public final class EdenModClient implements ClientModInitializer {
 			}
 		}
 		BridgeWebSocketClient current = socket;
+		// Reward confirmations feed the /eden gift automation directly (the only proof a
+		// swap-click actually produced a real handout — see GuildRewards' class doc), so
+		// this must not depend on the bridge being connected like the relay below does.
+		if (onWynncraft) {
+			GuildRewardParser.parse(message).ifPresent(guildRewards::onConfirmedReward);
+		}
 		if (!onWynncraft || current == null) {
 			return;
 		}
