@@ -13,6 +13,11 @@ import java.util.List;
  * under, and no {@code edenmod:} model has to exist for it.
  */
 public record CustomItem(String type, List<String> names, List<String> lores, String texture, boolean labelOnly) {
+	public CustomItem {
+		names = List.copyOf(names);
+		lores = List.copyOf(lores);
+	}
+
 	/** A rule that swaps the item's model to {@code edenmod:<texture>} and labels it. */
 	public CustomItem(String type, List<String> names, List<String> lores, String texture) {
 		this(type, names, lores, texture, false);

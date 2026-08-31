@@ -70,7 +70,10 @@ public final class GuildChatParser {
 			return Optional.empty();
 		}
 		List<Segment> segments = collect(message);
-		String cleaned = ChatText.normalize(concat(segments));
+		// Preserve punctuation spacing in the user-authored body. The stricter shared
+		// normalizer removes spaces before ':'/'!' for machine-parsed announcements,
+		// which would turn "hello :emote:" into "hello:emote:" in bridge payloads.
+		String cleaned = ChatText.normalizeWhitespace(concat(segments));
 		Matcher matcher = CHAT_PATTERN.matcher(cleaned);
 		if (!matcher.find()) {
 			return Optional.empty();

@@ -195,6 +195,15 @@ final class ChatText {
 	 * shapes are cleanly matchable.
 	 */
 	static String normalize(String raw) {
+		return normalizeWhitespace(raw).replaceAll("\\s+([,.:;!?])", "$1");
+	}
+
+	/**
+	 * Strip private-use glyph spam and control characters and collapse whitespace
+	 * without changing punctuation spacing. Use this for user-authored text, where a
+	 * space before {@code :shortcode:} or punctuation may be intentional.
+	 */
+	static String normalizeWhitespace(String raw) {
 		if (raw == null || raw.isBlank()) {
 			return "";
 		}
@@ -213,7 +222,7 @@ final class ChatText {
 			out.appendCodePoint(codePoint);
 			previousWasSpace = false;
 		}
-		return out.toString().trim().replaceAll("\\s+([,.:;!?])", "$1").replaceAll(" {2,}", " ");
+		return out.toString().trim();
 	}
 
 	/** Whether the code point is a control/format/private-use/surrogate/unassigned char. */

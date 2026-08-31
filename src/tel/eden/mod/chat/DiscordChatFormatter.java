@@ -197,7 +197,7 @@ public final class DiscordChatFormatter {
 	/** The "replyTo (excerpt)" segment: name in green, inline quote gray, full quote on hover. */
 	private static MutableComponent replyTarget(String replyTo, String replyExcerpt) {
 		MutableComponent segment = Component.literal(replyTo).withStyle(ChatFormatting.GREEN);
-		String quote = replyExcerpt == null ? "" : ChatText.normalize(replyExcerpt);
+		String quote = replyExcerpt == null ? "" : ChatText.normalizeWhitespace(replyExcerpt);
 		if (!quote.isEmpty()) {
 			String shown = quote.length() > EXCERPT_MAX ? quote.substring(0, EXCERPT_MAX).strip() + "…" : quote;
 			Style hover = Style.EMPTY.withColor(ChatFormatting.DARK_GRAY).withHoverEvent(new HoverEvent.ShowText(Component.literal(quote)));

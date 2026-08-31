@@ -7,8 +7,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.resources.Identifier;
 import tel.eden.mod.EdenLogger;
@@ -33,7 +33,6 @@ public final class EmoteRegistry {
 
 	private static volatile Map<String, Integer> emotes;
 	private static volatile FontDescription font;
-	private static volatile boolean failedToLoad;
 
 	private EmoteRegistry() {
 	}
@@ -70,7 +69,7 @@ public final class EmoteRegistry {
 	}
 
 	private static void load() {
-		Map<String, Integer> loaded = new ConcurrentHashMap<>();
+		Map<String, Integer> loaded = new HashMap<>();
 		String fontId = DEFAULT_FONT_ID;
 		try (InputStream in = EmoteRegistry.class.getResourceAsStream(MANIFEST_PATH)) {
 			if (in == null) {

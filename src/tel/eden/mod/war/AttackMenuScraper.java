@@ -30,23 +30,23 @@ public final class AttackMenuScraper {
 	private static final String TITLE_PREFIX = "Attacking:";
 	private static final Pattern DEFENSE = Pattern.compile("Territory Defences:\\s*(.+)");
 
-	// Last (territory, rating) sent, so we only transmit on a change. Reset whenever the
-	// attack menu isn't open, so reopening it always re-reports (covers a backend TTL
-	// expiry mid-war).
-	private static String lastTerritory = "";
-	private static String lastDefense = "";
+	// Track the last locally applied and successfully sent readings separately. This avoids
+	// repeated local work while still retrying a reading that arrived during a reconnect.
+	// Reset whenever the menu closes so reopening it always re-reports (covers backend TTL).
+	private static String lastObservedTerritory = "";
+	private static String lastObservedDefense = "";
+	private static String lastSentTerritory = "";
+	private static String lastSentDefense = "";
 
 	/** Client-thread tick: if the attack menu is open, scrape + relay slot 13's defence. */
 	public static void onTick(Minecraft mc) {
 		if (!(mc.screen instanceof AbstractContainerScreen<?> screen)) {
-			lastTerritory = "";
-			lastDefense = "";
+			resetLastReading();
 			return;
 		}
 		String territory = attackTargetTitle(screen);
 		if (territory == null) {
-			lastTerritory = "";
-			lastDefense = "";
+			resetLastReading();
 			return;
 		}
 		AbstractContainerMenu menu = screen.getMenu();
@@ -54,16 +54,26 @@ public final class AttackMenuScraper {
 			return;
 		}
 		String defense = defenceFromLore(menu.getSlot(DEFENSE_SLOT).getItem());
-		if (defense == null || (territory.equals(lastTerritory) && defense.equals(lastDefense))) {
+		if (defense == null) {
 			return;
 		}
-		lastTerritory = territory;
-		lastDefense = defense;
-		AttackTimerMenu.reportScrapedDefense(territory, defense);
-		BridgeWebSocketClient socket = EdenModClient.instance().socket();
-		if (socket != null) {
-			socket.sendWarDefense(territory, defense);
+		if (!territory.equals(lastObservedTerritory) || !defense.equals(lastObservedDefense)) {
+			lastObservedTerritory = territory;
+			lastObservedDefense = defense;
+			AttackTimerMenu.reportScrapedDefense(territory, defense);
 		}
+		BridgeWebSocketClient socket = EdenModClient.instance().socket();
+		if (socket != null && (!territory.equals(lastSentTerritory) || !defense.equals(lastSentDefense)) && socket.sendWarDefense(territory, defense)) {
+			lastSentTerritory = territory;
+			lastSentDefense = defense;
+		}
+	}
+
+	private static void resetLastReading() {
+		lastObservedTerritory = "";
+		lastObservedDefense = "";
+		lastSentTerritory = "";
+		lastSentDefense = "";
 	}
 
 	/** The territory named in an open "Attacking: &lt;territory&gt;" menu, or null. */

@@ -14,4 +14,7 @@ import java.util.List;
  *     from {@code "+633m Guild Experience"}); kept verbatim for display only
  */
 public record RaidCompletion(List<String> party, String raidName, int aspects, int emeralds, String guildExp) {
+	public RaidCompletion {
+		party = List.copyOf(party);
+	}
 }

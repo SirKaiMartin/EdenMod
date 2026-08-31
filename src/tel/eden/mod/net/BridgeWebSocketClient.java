@@ -150,6 +150,7 @@ public final class BridgeWebSocketClient {
 	private volatile WebSocket socket;
 	private volatile boolean running;
 	private int backoffSeconds = 1;
+	private boolean reconnectScheduled;
 	private final AtomicBoolean authChallengeSeen = new AtomicBoolean(false);
 	private volatile String pendingAuthUsername;
 	private int sessionVerifyRetries = 0;
@@ -194,6 +195,7 @@ public final class BridgeWebSocketClient {
 	public synchronized void close() {
 		running = false;
 		WebSocket current = socket;
+		socket = null;
 		if (current != null) {
 			current.sendClose(WebSocket.NORMAL_CLOSURE, "client closing");
 		}
@@ -221,11 +223,13 @@ public final class BridgeWebSocketClient {
 	 * Relay the guild's alliance list, read whole from the in-game Diplomacy menu. The
 	 * backend replaces its stored list with this, so it is only ever sent for a menu the
 	 * mod parsed in full.
+	 *
+	 * @return whether the message was queued on a connected socket
 	 */
-	public void sendGuildAlliances(java.util.List<String> guilds, java.util.List<String> guildTags) {
+	public boolean sendGuildAlliances(java.util.List<String> guilds, java.util.List<String> guildTags) {
 		WebSocket current = socket;
 		if (current == null) {
-			return;
+			return false;
 		}
 		JsonObject obj = new JsonObject();
 		obj.addProperty("type", "guildAlliances");
@@ -242,6 +246,7 @@ public final class BridgeWebSocketClient {
 		obj.add("guilds", names);
 		obj.add("tags", tags);
 		current.sendText(obj.toString(), true);
+		return true;
 	}
 
 	/**
@@ -442,17 +447,20 @@ public final class BridgeWebSocketClient {
 	 * Report a territory's defence rating scraped from the {@code /guild attack} menu.
 	 * The backend caches it and broadcasts it to every member's attack-timer HUD, so a
 	 * member who never opened the menu still sees the freshest defence intel.
+	 *
+	 * @return whether the message was queued on a connected socket
 	 */
-	public void sendWarDefense(String territory, String defense) {
+	public boolean sendWarDefense(String territory, String defense) {
 		WebSocket current = socket;
 		if (current == null) {
-			return;
+			return false;
 		}
 		JsonObject obj = new JsonObject();
 		obj.addProperty("type", "warDefense");
 		obj.addProperty("territory", territory);
 		obj.addProperty("defense", defense);
 		current.sendText(obj.toString(), true);
+		return true;
 	}
 
 	/**
@@ -703,16 +711,12 @@ public final class BridgeWebSocketClient {
 					LOGGER.warn("Bridge WebSocket rejected: HTTP {}", status);
 					// 4xx = permanent rejection; only 401 (bad JWT) reaches here now that
 					// version/membership errors are sent as application-level messages.
-					running = false;
-					sink.onConnectionRejected("http_" + status);
+					rejectConnection("http_" + status);
 					return;
 				}
 				LOGGER.warn("Bridge WebSocket connect failed: {}", error.toString());
-				scheduleReconnect();
+				scheduleReconnect(null);
 			} else {
-				authChallengeSeen.set(false);
-				pendingAuthUsername = null;
-				socket = ws;
 				LOGGER.info("Bridge WebSocket connected; awaiting session challenge");
 				// The socket is open but not yet trusted: the server sends an
 				// authChallenge, and only on authOk do we reset backoff and hand the
@@ -721,14 +725,45 @@ public final class BridgeWebSocketClient {
 		});
 	}
 
-	private void scheduleReconnect() {
-		socket = null;
-		if (!running) {
+	private synchronized void scheduleReconnect(WebSocket disconnected) {
+		// Ignore terminal callbacks from an older socket. Without this identity check, a
+		// delayed onClose can clear a replacement connection that is already authenticating.
+		if (disconnected != null && socket != disconnected) {
 			return;
 		}
+		socket = null;
+		if (!running || reconnectScheduled) {
+			return;
+		}
+		reconnectScheduled = true;
 		int delay = backoffSeconds;
 		backoffSeconds = Math.min(backoffSeconds * 2, MAX_BACKOFF_SECONDS);
-		scheduler.schedule(this::connect, delay, TimeUnit.SECONDS);
+		scheduler.schedule(this::runScheduledReconnect, delay, TimeUnit.SECONDS);
+	}
+
+	private void runScheduledReconnect() {
+		synchronized (this) {
+			reconnectScheduled = false;
+			if (!running) {
+				return;
+			}
+		}
+		connect();
+	}
+
+	/** Permanently stop this client after a server rejection and release its executor. */
+	private void rejectConnection(String code) {
+		WebSocket current;
+		synchronized (this) {
+			running = false;
+			current = socket;
+			socket = null;
+			scheduler.shutdownNow();
+		}
+		if (current != null) {
+			current.sendClose(WebSocket.NORMAL_CLOSURE, "connection rejected");
+		}
+		sink.onConnectionRejected(code);
 	}
 
 	private final class Listener implements WebSocket.Listener {
@@ -736,6 +771,19 @@ public final class BridgeWebSocketClient {
 
 		@Override
 		public void onOpen(WebSocket webSocket) {
+			boolean accepted;
+			synchronized (BridgeWebSocketClient.this) {
+				accepted = running && (socket == null || socket == webSocket);
+				if (accepted) {
+					authChallengeSeen.set(false);
+					pendingAuthUsername = null;
+					socket = webSocket;
+				}
+			}
+			if (!accepted) {
+				webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "stale connection");
+				return;
+			}
 			webSocket.request(1);
 		}
 
@@ -754,14 +802,14 @@ public final class BridgeWebSocketClient {
 		@Override
 		public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
 			LOGGER.info("Bridge WebSocket closed ({}): {}", statusCode, reason);
-			scheduleReconnect();
+			scheduleReconnect(webSocket);
 			return null;
 		}
 
 		@Override
 		public void onError(WebSocket webSocket, Throwable error) {
 			LOGGER.warn("Bridge WebSocket error: {}", error.toString());
-			scheduleReconnect();
+			scheduleReconnect(webSocket);
 		}
 	}
 
@@ -813,8 +861,7 @@ public final class BridgeWebSocketClient {
 						// Leave running=true so the imminent onClose schedules a reconnect.
 					} else {
 						LOGGER.warn("Bridge rejected connection: {}", code);
-						running = false;
-						sink.onConnectionRejected(code);
+						rejectConnection(code);
 					}
 				}
 				default -> {
