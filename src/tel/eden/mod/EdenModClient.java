@@ -307,16 +307,8 @@ public final class EdenModClient implements ClientModInitializer {
 		return openEmotePickerKey.matchesMouse(event);
 	}
 
-	public boolean isOpenEmotePickerMouseBound() {
-		return openEmotePickerKey.saveString().startsWith("key.mouse.");
-	}
-
-	public boolean shouldOpenEmotePickerOnChatOpen() {
-		Minecraft mc = Minecraft.getInstance();
-		if (isOpenEmotePickerMouseBound() || mc.options == null) {
-			return false;
-		}
-		return openEmotePickerKey.saveString().equals(mc.options.keyChat.saveString()) && openEmotePickerKey.isDown();
+	public boolean matchesOpenEmotePickerKey(net.minecraft.client.input.KeyEvent event) {
+		return openEmotePickerKey.matches(event);
 	}
 
 	public void openCenteredEmotePicker() {
@@ -555,10 +547,8 @@ public final class EdenModClient implements ClientModInitializer {
 			}
 		}
 		while (openEmotePickerKey.consumeClick()) {
-			if (client.screen instanceof ChatScreen && isOpenEmotePickerMouseBound()) {
-				continue;
-			}
-			openCenteredEmotePicker();
+			// Mouse and keyboard bindings are handled directly by ChatScreenMixin. Drain
+			// queued clicks here so input outside chat can never open the picker later.
 		}
 		pollCommandKeybinds(client);
 		if (pendingUpdateNotification && client.player != null) {
