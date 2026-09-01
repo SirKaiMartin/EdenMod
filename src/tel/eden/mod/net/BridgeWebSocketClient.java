@@ -70,6 +70,15 @@ public final class BridgeWebSocketClient {
 		 */
 		void onRewardDeductReply(String target, String rewardKind, int amount, int remaining, String error, String color);
 
+		/**
+		 * Response to a {@code giftLockAcquire}: {@code granted} says whether the caller
+		 * may (continue to) drive the in-game gifting automation. A refusal carries
+		 * {@code error}; when refused because another Chief already holds it, {@code
+		 * holder} names them and {@code retryAfterSeconds} is an upper bound on how long
+		 * until their hold's own inactivity timeout would free it.
+		 */
+		void onGiftLockReply(boolean granted, String error, String holder, int retryAfterSeconds);
+
 		/** A raid party changed state ({@code open}/{@code join}/{@code full}/etc.). */
 		void onPartyUpdate(String event, String actor, PartyInfo party, String color);
 
@@ -335,6 +344,38 @@ public final class BridgeWebSocketClient {
 		obj.addProperty("rewardKind", rewardKind);
 		obj.addProperty("target", target);
 		obj.addProperty("amount", amount);
+		current.sendText(obj.toString(), true);
+		return true;
+	}
+
+	/**
+	 * Ask the backend for exclusive use of the in-game gifting automation (Chiefs
+	 * only) — see {@link MessageSink#onGiftLockReply}. Also doubles as a renewal: a
+	 * call from whoever already holds it just extends the hold rather than being
+	 * refused as "already held". Returns false when the socket is down, so the
+	 * caller can fail closed instead of waiting for a reply that will never come.
+	 */
+	public boolean sendGiftLockAcquire() {
+		return sendTypeIfConnected("giftLockAcquire");
+	}
+
+	/**
+	 * Tell the backend a gifting run has ended (success, failure, or interruption),
+	 * releasing the lock if this player holds it. Best-effort and fire-and-forget:
+	 * the lock also auto-expires server-side, so a socket that's already down here
+	 * needs no special handling — that case is exactly what the expiry is for.
+	 */
+	public void sendGiftLockRelease() {
+		sendType("giftLockRelease");
+	}
+
+	private boolean sendTypeIfConnected(String type) {
+		WebSocket current = socket;
+		if (current == null) {
+			return false;
+		}
+		JsonObject obj = new JsonObject();
+		obj.addProperty("type", type);
 		current.sendText(obj.toString(), true);
 		return true;
 	}
@@ -824,6 +865,7 @@ public final class BridgeWebSocketClient {
 				case "aspectsPendingReply" -> sink.onAspectsPending(parsePendingEntries(obj), get(obj, "error"), get(obj, "color"));
 				case "aspectGiveawayReply" -> sink.onAspectGiveaway(parseGiveawayCandidates(obj), getInt(obj, "storageAspects", 0), get(obj, "error"), get(obj, "color"));
 				case "rewardDeductReply" -> sink.onRewardDeductReply(get(obj, "target"), get(obj, "rewardKind"), getInt(obj, "amount", 0), getInt(obj, "remaining", 0), get(obj, "error"), get(obj, "color"));
+				case "giftLockReply" -> sink.onGiftLockReply(getBool(obj, "granted"), get(obj, "error"), get(obj, "holder"), getInt(obj, "retryAfterSeconds", 0));
 				case "partyUpdate" -> sink.onPartyUpdate(get(obj, "event"), get(obj, "actor"), parseParty(obj), get(obj, "color"));
 				case "partyListReply" -> sink.onPartyList(parsePartyList(obj), get(obj, "color"));
 				case "partyFeedback" -> sink.onPartyFeedback(get(obj, "message"), get(obj, "color"));

@@ -161,6 +161,16 @@ public final class EdenModClient implements ClientModInitializer {
 	private KeyMapping createPartyKey;
 	private KeyMapping openEmotePickerKey;
 	private BridgeWebSocketClient socket;
+	// The in-flight giftLockAcquire's result slot: onGiftLockReply completes it (from
+	// the bridge's read thread), GuildRewards.GiftLockGateway.acquire() blocks on it
+	// (from the reward worker thread). At most one acquire is ever outstanding —
+	// GuildRewards drives all gifting from its own single-threaded worker — so a single
+	// slot (not a per-request map) is enough; a stale reply arriving after a timeout
+	// already gave up just completes a future nobody is waiting on any more.
+	private final java.util.concurrent.atomic.AtomicReference<CompletableFuture<String>> pendingGiftLock = new java.util.concurrent.atomic.AtomicReference<>();
+	// How long GiftLockGateway.acquire() waits for a giftLockReply before treating the
+	// bridge as unreachable and failing closed.
+	private static final long GIFT_LOCK_TIMEOUT_SECONDS = 8;
 
 	public BridgeWebSocketClient socket() {
 		return socket;
@@ -417,6 +427,37 @@ public final class EdenModClient implements ClientModInitializer {
 		// Deduct what was just paid out from the backend's pending balance, so a payout
 		// no longer has to be followed by a /manage reset on Discord.
 		guildRewards.setDeductReporter(this::onRewardHandedOut);
+		// Exclusive use of the gifting automation, coordinated through the bridge so two
+		// Chiefs' mods can never drive the guild-manage menu at the same time.
+		guildRewards.setGiftLockGateway(new GuildRewards.GiftLockGateway() {
+			@Override
+			public String acquire() {
+				BridgeWebSocketClient current = socket;
+				if (current == null) {
+					return "not connected to the bridge";
+				}
+				CompletableFuture<String> future = new CompletableFuture<>();
+				pendingGiftLock.set(future);
+				if (!current.sendGiftLockAcquire()) {
+					pendingGiftLock.compareAndSet(future, null);
+					return "not connected to the bridge";
+				}
+				try {
+					return future.get(GIFT_LOCK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+				} catch (Exception e) {
+					pendingGiftLock.compareAndSet(future, null);
+					return "no response from the bridge";
+				}
+			}
+
+			@Override
+			public void release() {
+				BridgeWebSocketClient current = socket;
+				if (current != null) {
+					current.sendGiftLockRelease();
+				}
+			}
+		});
 
 		KeyMapping.Category edenCategory = new KeyMapping.Category(net.minecraft.resources.Identifier.parse("edenmod"));
 		openConfigKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.edenmod.open_config", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_B, edenCategory));
@@ -745,6 +786,17 @@ public final class EdenModClient implements ClientModInitializer {
 					// the wrong player.
 					claimPendingDeduct(target, rewardKind);
 					displayColoredDirect(color, () -> DiscordChatFormatter.systemLine("Confirmed " + amount + " " + rewardKind + " deduction for " + target + " — " + remaining + " remaining.", ChatFormatting.GREEN));
+				}
+
+				@Override
+				public void onGiftLockReply(boolean granted, String error, String holder, int retryAfterSeconds) {
+					// Completes whatever GiftLockGateway.acquire() call is currently
+					// blocked waiting on it; a reply arriving after that call already
+					// timed out just completes a future nobody reads any more.
+					CompletableFuture<String> future = pendingGiftLock.getAndSet(null);
+					if (future != null) {
+						future.complete(granted ? null : (error == null || error.isEmpty() ? "denied" : error));
+					}
 				}
 
 				@Override
