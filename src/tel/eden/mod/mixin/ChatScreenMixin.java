@@ -155,6 +155,11 @@ public abstract class ChatScreenMixin {
 			FormattedCharSequence formatted = ChatEmoteFormatter.format(text);
 			return formatted;
 		});
+		// Shared chat/picker bindings open the screen before this mixin sees the original
+		// key press, so init needs to revive the queued picker request for that case.
+		if (EdenModClient.instance().shouldOpenEmotePickerOnChatOpen()) {
+			EdenModClient.instance().requestCenteredEmotePicker();
+		}
 		edenmod$openCenteredPickerIfRequested();
 	}
 

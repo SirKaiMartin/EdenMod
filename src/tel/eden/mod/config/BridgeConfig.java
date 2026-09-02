@@ -196,6 +196,13 @@ public final class BridgeConfig {
 	/** Which chat emote tools are enabled: inline/picker UI, autocomplete, both, or none. */
 	public ChatEmoteToolsMode chatEmoteToolsMode = ChatEmoteToolsMode.UI_AND_AUTO;
 
+	/**
+	 * Whether the emote-picker keybind may open chat directly from gameplay when no
+	 * other screen is open. When disabled, the binding only works while chat is
+	 * already focused.
+	 */
+	public boolean emotePickerOpenFromGameplay = true;
+
 	/** Visible emote-picker columns in the chat overlay. */
 	public int emotePickerColumns = 5;
 
