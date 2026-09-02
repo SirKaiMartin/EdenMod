@@ -118,6 +118,8 @@ public final class BridgeConfigScreen extends Screen {
 		});
 		addToggleRow("Custom item textures", () -> config.customItemTextures, v -> config.customItemTextures = v, "On", "Off", true);
 		addToggleRow("Consumable labels", () -> config.consumableLabels, v -> config.consumableLabels = v, "On", "Off", true);
+		addToggleRow("Dropped item scaling", () -> config.groundItemVisibility, v -> config.groundItemVisibility = v, "On", "Off", false);
+		addButtonRow("Dropped item rules", () -> Component.literal("Edit..."), () -> this.minecraft.setScreen(new GroundItemVisibilityScreen(this, config)), () -> config.groundItemVisibilityRules = new ArrayList<>());
 		addToggleRow("Emote wheel", () -> config.emoteWheelEnabled, v -> config.emoteWheelEnabled = v, "On", "Off", true);
 		addButtonRow("Emote wheel favorites", () -> Component.literal("Edit..."), () -> this.minecraft.setScreen(new tel.eden.mod.emote.EmoteConfigScreen(this, config)), () -> {
 		});

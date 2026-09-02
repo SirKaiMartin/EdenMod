@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import net.fabricmc.loader.api.FabricLoader;
 import tel.eden.mod.EdenLogger;
@@ -98,6 +99,40 @@ public final class BridgeConfig {
 
 	/** Green in-world beacon marking the soonest upcoming territory attack. */
 	public boolean warGreenBeacon = true;
+
+	// ---- Dropped item scaling ---------------------------------------------------
+
+	public static final float GROUND_ITEM_MIN_SCALE = 0.1f;
+	public static final float GROUND_ITEM_MAX_SCALE = 10.0f;
+
+	/** Master toggle for client-only dropped-item rescaling. */
+	public boolean groundItemVisibility = false;
+
+	/** Ordered filter rules for dropped items. The first matching rule supplies the scale. */
+	public List<GroundItemVisibilityRule> groundItemVisibilityRules = new ArrayList<>();
+
+	public static final class GroundItemVisibilityRule {
+		/** Case-insensitive substring filter against the dropped item's visible name. */
+		public String nameContains = "";
+		/** Render-only dropped-item scale multiplier. Range 0.1-10.0; 1.0 means unchanged. */
+		public float size = 1.0f;
+
+		public GroundItemVisibilityRule() {
+		}
+
+		public GroundItemVisibilityRule(String nameContains, float size) {
+			this.nameContains = nameContains;
+			this.size = size;
+		}
+
+		public void sanitize() {
+			nameContains = sanitizeGroundItemName(nameContains);
+			if (!Float.isFinite(size)) {
+				size = 1.0f;
+			}
+			size = Math.max(GROUND_ITEM_MIN_SCALE, Math.min(GROUND_ITEM_MAX_SCALE, size));
+		}
+	}
 
 	/** War info overlay: tower EHP, team DPS, and estimated time remaining. */
 	public boolean warDpsHud = true;
@@ -299,6 +334,13 @@ public final class BridgeConfig {
 					if (config.emotePickerOpenMode == null) {
 						config.emotePickerOpenMode = EmotePickerOpenMode.CURSOR;
 					}
+					if (config.groundItemVisibilityRules == null) {
+						config.groundItemVisibilityRules = new ArrayList<>();
+					}
+					config.groundItemVisibilityRules.removeIf(rule -> rule == null);
+					for (GroundItemVisibilityRule rule : config.groundItemVisibilityRules) {
+						rule.sanitize();
+					}
 					config.emotePickerColumns = Math.max(1, Math.min(10, config.emotePickerColumns));
 					config.emotePickerRows = Math.max(1, Math.min(10, config.emotePickerRows));
 					config.warAttackTimerMaxRows = Math.max(1, Math.min(50, config.warAttackTimerMaxRows));
@@ -328,5 +370,19 @@ public final class BridgeConfig {
 		} catch (IOException e) {
 			LOGGER.warn("Failed to write edenmod config", e);
 		}
+	}
+
+	public static String sanitizeGroundItemName(String value) {
+		if (value == null) {
+			return "";
+		}
+		return value.trim().replaceAll("\\s+", " ");
+	}
+
+	public static String normalizeGroundItemName(String value) {
+		if (value == null) {
+			return "";
+		}
+		return sanitizeGroundItemName(value).toLowerCase(Locale.ROOT);
 	}
 }

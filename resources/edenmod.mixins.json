@@ -9,6 +9,7 @@
     "ClientPacketListenerCommandAliasMixin",
     "ClientPacketListenerMixin",
     "ConnectionScoreboardMixin",
+    "GroundItemVisibilityMixin",
     "GuiGraphicsMixin",
     "ItemDecorationMixin",
     "ItemRenderMixin",
