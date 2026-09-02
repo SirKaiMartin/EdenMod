@@ -67,7 +67,7 @@ public final class WynntilsItemDecoder {
 			return Optional.empty();
 		}
 
-		String name = String.valueOf(call(wynnItem, "getName"));
+		String name = normalizeRenderableText(String.valueOf(call(wynnItem, "getName")));
 		Object tier = callOrNull(wynnItem, "getGearTier");
 		Object type = callOrNull(wynnItem, "getGearType");
 
@@ -83,8 +83,10 @@ public final class WynntilsItemDecoder {
 				buildIdentifications(wynnItem),
 				buildMajorIds(wynnItem),
 				buildWeightings(wynnItem),
+				buildShinyTracker(wynnItem),
 				buildPowders(wynnItem),
-				numberOr(callOrNull(wynnItem, "getPowderSlots"), 0)));
+				numberOr(callOrNull(wynnItem, "getPowderSlots"), 0),
+				resolveRerollCount(wynnItem)));
 	}
 
 	private static List<DecodedItem.Identification> buildIdentifications(Object wynnItem) throws ReflectiveOperationException {
@@ -104,8 +106,8 @@ public final class WynntilsItemDecoder {
 		for (Object actual : actualList) {
 			Object statType = call(actual, "statType");
 			int value = numberOr(call(actual, "value"), 0);
-			String statName = String.valueOf(call(statType, "getDisplayName"));
-			String valueText = (value >= 0 ? "+" : "") + value + statUnit(statType);
+			String statName = normalizeRenderableText(String.valueOf(call(statType, "getDisplayName")));
+			String valueText = normalizeRenderableText((value >= 0 ? "+" : "") + value + statUnit(statType));
 			float roll = rollPercent(actual, possibleByStat.get(statType));
 			ordered.add(new OrderedIdentification(
 					new DecodedItem.Identification(statName, valueText, roll, value >= 0),
@@ -128,7 +130,7 @@ public final class WynntilsItemDecoder {
 			if (major == null) {
 				return majorIds;
 			}
-			String name = stringOrBlank(callOrNull(major, "name"));
+			String name = normalizeRenderableText(stringOrBlank(callOrNull(major, "name")));
 			String description = readableStyledText(callOrNull(major, "lore"));
 			if (!name.isBlank() || !description.isBlank()) {
 				majorIds.add(new DecodedItem.MajorIdentification(name, description));
@@ -170,7 +172,7 @@ public final class WynntilsItemDecoder {
 					Object percentage = calculateWeighting.invoke(services, weighting, wynnItem);
 					if (percentage instanceof Number n) {
 						Object scaleName = callOrNull(weighting, "weightName");
-						weightings.add(new DecodedItem.Weighting(prettyEnum(sourceName), String.valueOf(scaleName), n.floatValue()));
+						weightings.add(new DecodedItem.Weighting(prettyEnum(sourceName), normalizeRenderableText(String.valueOf(scaleName)), n.floatValue()));
 					}
 				}
 			}
@@ -180,13 +182,34 @@ public final class WynntilsItemDecoder {
 		return weightings;
 	}
 
+	private static DecodedItem.ShinyTracker buildShinyTracker(Object wynnItem) {
+		try {
+			// Non-crafted gear items expose one shiny-specific tracker such as
+			// "Major World Events Won". If the item type does not support it, this
+			// simply returns null and the renderer omits the row.
+			Object shinyStat = unwrapOptional(callOrNull(wynnItem, "getShinyStat"));
+			if (shinyStat == null) {
+				return null;
+			}
+
+			Object statType = callOrNull(shinyStat, "statType");
+			String name = normalizeRenderableText(stringOrBlank(callOrNull(statType, "displayName")));
+			long value = longOr(callOrNull(shinyStat, "value"), 0L);
+			String valueText = formatStatValue(value, statUnitDisplay(statType));
+			return name.isBlank() ? null : new DecodedItem.ShinyTracker(name, valueText);
+		} catch (RuntimeException ignored) {
+			return null;
+		}
+	}
+
 	private static List<DecodedItem.PowderSlot> buildPowders(Object wynnItem) {
 		List<DecodedItem.PowderSlot> powders = new ArrayList<>();
 		try {
 			// Keep this extraction path in place even though chat-shared items currently
-			// decode with no powder contents in the cases we tested. If Wynntils starts
-			// exposing powders here later, EdenMod will automatically render them instead
-			// of the current neutral placeholder circles.
+			// decode with no powder contents in the cases we tested. The renderer now omits
+			// powder visuals entirely so the generated image does not overstate certainty,
+			// but we still retain the decoded metadata here for future support and debugging
+			// if Wynntils starts exposing real socket contents in chat shares later.
 			Object powderValues = callOrNull(wynnItem, "getPowders");
 			if (!(powderValues instanceof List<?> powderList) || powderList.isEmpty()) {
 				// Some Wynntils item types expose powders only on the nested instance record.
@@ -208,6 +231,13 @@ public final class WynntilsItemDecoder {
 		} catch (RuntimeException ignored) {
 		}
 		return powders;
+	}
+
+	private static int resolveRerollCount(Object wynnItem) {
+		// Some items simply are not rerollable (or Wynntils does not expose a count for
+		// that item type), so use -1 as the renderer's "not applicable" sentinel.
+		Object rerolls = callOrNull(wynnItem, "getRerollCount");
+		return rerolls instanceof Number n ? n.intValue() : -1;
 	}
 
 	private static float resolveOverallPercent(Object wynnItem) {
@@ -321,6 +351,24 @@ public final class WynntilsItemDecoder {
 	private static String statUnit(Object statType) {
 		Object unit = callOrNull(statType, "getUnit");
 		if (unit == null) {
+			unit = callOrNull(statType, "statUnit");
+		}
+		if (unit == null) {
+			return "";
+		}
+		Object display = callOrNull(unit, "getDisplayName");
+		return display == null ? "" : String.valueOf(display);
+	}
+
+	private static String statUnitDisplay(Object statType) {
+		if (statType == null) {
+			return "";
+		}
+		Object unit = callOrNull(statType, "statUnit");
+		if (unit == null) {
+			unit = callOrNull(statType, "getUnit");
+		}
+		if (unit == null) {
 			return "";
 		}
 		Object display = callOrNull(unit, "getDisplayName");
@@ -426,11 +474,47 @@ public final class WynntilsItemDecoder {
 		if (text == null) {
 			text = callOrNull(styledText, "toString");
 		}
-		return stripMinecraftFormatting(stringOrBlank(text)).replaceAll("\\s+", " ").trim();
+		return normalizeRenderableText(stripMinecraftFormatting(stringOrBlank(text)));
 	}
 
 	private static String stripMinecraftFormatting(String text) {
 		return text == null ? "" : text.replaceAll("[\\u00A7§].", "");
+	}
+
+	private static String normalizeRenderableText(String text) {
+		if (text == null || text.isBlank()) {
+			return "";
+		}
+
+		// Wynncraft/Wynntils strings can include Minecraft-specific glyphs that rely on the
+		// in-game font atlas. Java2D does not have those glyphs, so strip them here before
+		// they can turn into replacement boxes or check marks in the generated PNG.
+		StringBuilder cleaned = new StringBuilder(text.length());
+		boolean previousWasSpace = false;
+		for (int index = 0; index < text.length();) {
+			int codePoint = text.codePointAt(index);
+			index += Character.charCount(codePoint);
+			if (Character.isWhitespace(codePoint)) {
+				if (!previousWasSpace) {
+					cleaned.append(' ');
+					previousWasSpace = true;
+				}
+				continue;
+			}
+			if (isUnsupportedRenderableCodePoint(codePoint)) {
+				continue;
+			}
+			cleaned.appendCodePoint(codePoint);
+			previousWasSpace = false;
+		}
+		return cleaned.toString().trim();
+	}
+
+	private static boolean isUnsupportedRenderableCodePoint(int codePoint) {
+		return switch (Character.getType(codePoint)) {
+			case Character.CONTROL, Character.FORMAT, Character.PRIVATE_USE, Character.SURROGATE, Character.UNASSIGNED -> true;
+			default -> codePoint == 0xFFFD;
+		};
 	}
 
 	private static Object call(Class<?> cls, Object target, String method, Class<?>[] types, Object... args) throws ReflectiveOperationException {
@@ -445,12 +529,20 @@ public final class WynntilsItemDecoder {
 		if (raw == null || raw.isBlank()) {
 			return "";
 		}
-		String lower = raw.replace('_', ' ').toLowerCase(Locale.ROOT);
+		String lower = normalizeRenderableText(raw).replace('_', ' ').toLowerCase(Locale.ROOT);
 		return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
 	}
 
 	private static int numberOr(Object value, int fallback) {
 		return value instanceof Number n ? n.intValue() : fallback;
+	}
+
+	private static long longOr(Object value, long fallback) {
+		return value instanceof Number n ? n.longValue() : fallback;
+	}
+
+	private static String formatStatValue(long value, String unit) {
+		return normalizeRenderableText((value >= 0 ? "+" : "") + value + (unit == null ? "" : unit));
 	}
 
 	private static String stringOrBlank(Object value) {

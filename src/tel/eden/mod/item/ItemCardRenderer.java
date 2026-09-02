@@ -21,20 +21,19 @@ import javax.imageio.ImageIO;
 public final class ItemCardRenderer {
 	private static final int WIDTH = 360;
 	private static final int PAD = 18;
-	private static final int NAME_H = 34;
+	private static final int NAME_LINE_H = 26;
 	private static final int PILL_H = 30;
 	private static final int ROW_H = 22;
 	private static final int DETAIL_ROW_H = 18;
 	private static final int GAP = 12;
-	private static final int POWDER_DOT_SIZE = 8;
-	private static final int POWDER_DOT_STEP = 14;
+	private static final int SECTION_SUFFIX_GAP = 4;
+	private static final int SECTION_SUFFIX_Y_ADJUST = 1;
 
 	private static final Color BG = new Color(0x16, 0x16, 0x1C);
 	private static final Color VALUE_POS = new Color(0x55, 0xFF, 0x55);
 	private static final Color VALUE_NEG = new Color(0xFF, 0x55, 0x55);
 	private static final Color STAT_NAME = new Color(0xD0, 0xD0, 0xD0);
-	private static final Color MUTED = new Color(0x88, 0x88, 0x88);
-	private static final Color POWDER_EMPTY = new Color(0x7A, 0x7A, 0x7A);
+	private static final Color SHINY = new Color(0xFF, 0xF0, 0x8A);
 
 	private static final Font NAME_FONT = new Font("SansSerif", Font.BOLD, 22);
 	private static final Font PILL_FONT = new Font("SansSerif", Font.BOLD, 13);
@@ -61,11 +60,14 @@ public final class ItemCardRenderer {
 			y += GAP - 2;
 
 			// Keep the section order close to Wynncraft's tooltip: top summary, weights,
-			// powders, main identifications, then major IDs at the bottom.
+			// tracker/stats, then major IDs at the bottom. Powder rendering is intentionally
+			// omitted for now: Wynntils' current chat-share decode path exposes the slot count
+			// but not the actual socket contents in the items we tested, which made the image
+			// imply accuracy it did not have.
 			y = drawWeightings(g, item, y);
-			y = addGapIfNeeded(y, !item.weightings().isEmpty(), hasPowderSection(item));
-			y = drawPowderSlots(g, item, y);
-			y = addGapIfNeeded(y, hasPowderSection(item), !item.identifications().isEmpty());
+			y = addGapIfNeeded(y, !item.weightings().isEmpty(), hasTrackerSection(item) || !item.identifications().isEmpty());
+			y = drawTrackerSection(g, item, y);
+			y = addGapIfNeeded(y, hasTrackerSection(item), hasStatsSection(item));
 			y = drawIdentifications(g, item, y);
 			y = addGapIfNeeded(y, !item.identifications().isEmpty(), !item.majorIds().isEmpty());
 			drawMajorIds(g, item, y);
@@ -82,18 +84,33 @@ public final class ItemCardRenderer {
 		g.setFont(NAME_FONT);
 		g.setColor(new Color(item.tierColor()));
 		if (!item.hasOverall()) {
-			drawCentered(g, item.name(), y);
-			return y + NAME_H - 18;
+			for (String line : wrap(g.getFontMetrics(), item.name(), WIDTH - PAD * 2)) {
+				drawCentered(g, line, y);
+				y += NAME_LINE_H;
+			}
+			return y - 10;
 		}
 
 		String namePart = item.name();
 		String percentPart = String.format("  [%.2f%%]", item.overallPercent());
-		int startX = (WIDTH - g.getFontMetrics().stringWidth(namePart + percentPart)) / 2;
+		FontMetrics metrics = g.getFontMetrics();
+		if (metrics.stringWidth(namePart + percentPart) <= WIDTH - PAD * 2) {
+			int startX = (WIDTH - metrics.stringWidth(namePart + percentPart)) / 2;
+			g.drawString(namePart, startX, y);
+			g.setColor(rollColor(item.overallPercent()));
+			g.drawString(percentPart, startX + metrics.stringWidth(namePart), y);
+			return y + NAME_LINE_H - 10;
+		}
 
-		g.drawString(namePart, startX, y);
+		// Longer item names are split across centered lines so they stay readable instead
+		// of shrinking or clipping against the card edge.
+		for (String line : wrap(metrics, namePart, WIDTH - PAD * 2)) {
+			drawCentered(g, line, y);
+			y += NAME_LINE_H;
+		}
 		g.setColor(rollColor(item.overallPercent()));
-		g.drawString(percentPart, startX + g.getFontMetrics().stringWidth(namePart), y);
-		return y + NAME_H - 18;
+		drawCentered(g, percentPart.trim(), y);
+		return y + NAME_LINE_H - 10;
 	}
 
 	private static int drawPill(Graphics2D g, DecodedItem item, int y) {
@@ -141,41 +158,12 @@ public final class ItemCardRenderer {
 		return y;
 	}
 
-	private static int drawPowderSlots(Graphics2D g, DecodedItem item, int y) {
-		int totalSlots = totalPowderSlots(item);
-		if (totalSlots <= 0) {
-			return y;
-		}
-
-		g.setFont(STAT_FONT);
-		g.setColor(MUTED);
-		String label = "Powder Slots ";
-		g.drawString(label, PAD, y);
-
-		FontMetrics metrics = g.getFontMetrics();
-		int x = PAD + metrics.stringWidth(label);
-		int centerY = y - metrics.getAscent() + (metrics.getAscent() + metrics.getDescent()) / 2 + 1;
-
-		g.drawString("[", x, y);
-		x += metrics.stringWidth("[") + 4;
-
-		for (int i = 0; i < totalSlots; i++) {
-			boolean filled = i < item.powders().size();
-			// Powders currently decode empty for chat-shared items in the Wynntils path we
-			// can access, so these often render as neutral placeholders for now. Keep the
-			// color logic in place so real socket colors show up automatically if Wynntils
-			// starts exposing them in the future.
-			Color color = filled ? powderColor(item.powders().get(i).element()) : POWDER_EMPTY;
-			drawPowderDot(g, x + 1, centerY, color, !filled);
-			x += POWDER_DOT_STEP;
-		}
-
-		g.setColor(MUTED);
-		g.drawString("]", x, y);
-		return y + ROW_H;
-	}
-
 	private static int drawIdentifications(Graphics2D g, DecodedItem item, int y) {
+		if (hasStatsSection(item)) {
+			drawSectionHeader(g, "Stats", item, PAD, y, new Color(item.tierColor()));
+			y += ROW_H - 4;
+		}
+
 		g.setFont(STAT_FONT);
 		for (DecodedItem.Identification id : item.identifications()) {
 			g.setColor(STAT_NAME);
@@ -195,6 +183,25 @@ public final class ItemCardRenderer {
 			}
 			y += ROW_H;
 		}
+		return y;
+	}
+
+	private static int drawTrackerSection(Graphics2D g, DecodedItem item, int y) {
+		if (!hasTrackerSection(item)) {
+			return y;
+		}
+
+		drawSectionHeader(g, "Tracker", item, PAD, y, SHINY);
+		y += ROW_H - 4;
+
+		DecodedItem.ShinyTracker tracker = item.shinyTracker();
+		g.setFont(STAT_FONT);
+		g.setColor(SHINY);
+		g.drawString(tracker.name(), PAD, y);
+
+		String value = tracker.valueText().replace("+", "");
+		g.drawString(value, WIDTH - PAD - g.getFontMetrics().stringWidth(value), y);
+		y += ROW_H;
 		return y;
 	}
 
@@ -224,38 +231,26 @@ public final class ItemCardRenderer {
 		return beforeSectionPresent && afterSectionPresent ? y + GAP : y;
 	}
 
-	private static boolean hasPowderSection(DecodedItem item) {
-		return totalPowderSlots(item) > 0;
-	}
-
-	private static int totalPowderSlots(DecodedItem item) {
-		return Math.max(item.powderSlots(), item.powders().size());
-	}
-
-	private static void drawPowderDot(Graphics2D g, int x, int centerY, Color color, boolean empty) {
-		int y = centerY - POWDER_DOT_SIZE / 2;
-		g.setColor(color);
-		if (empty) {
-			g.drawOval(x, y, POWDER_DOT_SIZE, POWDER_DOT_SIZE);
-			return;
-		}
-		g.fillOval(x, y, POWDER_DOT_SIZE, POWDER_DOT_SIZE);
-		g.setColor(color.darker());
-		g.drawOval(x, y, POWDER_DOT_SIZE, POWDER_DOT_SIZE);
+	private static boolean hasTrackerSection(DecodedItem item) {
+		return item.hasShinyTracker();
 	}
 
 	private static int measureHeight(DecodedItem item) {
-		// Mirror the same section order as render() so future layout changes only need
-		// to reason about one top-to-bottom flow.
-		int height = PAD + NAME_H + PILL_H + GAP - 2;
+		// Mirror render() top-to-bottom so layout tweaks do not desync measurement from
+		// drawing and create clipped cards.
+		int height = PAD + measureNameHeight(item) + PILL_H + GAP - 2;
 		height += measureWeightingsHeight(item);
-		if (!item.weightings().isEmpty() && hasPowderSection(item)) {
+		if (!item.weightings().isEmpty() && (hasTrackerSection(item) || hasStatsSection(item))) {
 			height += GAP;
 		}
-		if (hasPowderSection(item)) {
+		if (hasTrackerSection(item)) {
+			height += ROW_H - 4;
 			height += ROW_H;
 		}
-		if (hasPowderSection(item) && !item.identifications().isEmpty()) {
+		if (hasStatsSection(item)) {
+			height += ROW_H - 4;
+		}
+		if (hasTrackerSection(item) && !item.identifications().isEmpty()) {
 			height += GAP;
 		}
 		height += item.identifications().size() * ROW_H;
@@ -290,6 +285,51 @@ public final class ItemCardRenderer {
 			height += 4;
 		}
 		return height;
+	}
+
+	private static void drawSectionHeader(Graphics2D g, String title, DecodedItem item, int x, int y, Color color) {
+		g.setColor(color);
+		g.setFont(SECTION_FONT);
+		g.drawString(title, x, y);
+		if (!hasVisibleRerolls(item)) {
+			return;
+		}
+
+		// Draw the reroll suffix separately so its baseline can be tuned independently;
+		// the font renders bracket-heavy suffixes slightly off when the whole header is
+		// drawn as a single string.
+		Font suffixFont = SECTION_FONT.deriveFont(Font.PLAIN);
+		g.setFont(suffixFont);
+		FontMetrics titleMetrics = g.getFontMetrics(SECTION_FONT);
+		String suffix = " [" + item.rerollCount() + "]";
+		int suffixX = x + titleMetrics.stringWidth(title) + SECTION_SUFFIX_GAP;
+		int suffixY = y + SECTION_SUFFIX_Y_ADJUST;
+		g.drawString(suffix, suffixX, suffixY);
+	}
+
+	private static boolean hasStatsSection(DecodedItem item) {
+		return !item.identifications().isEmpty();
+	}
+
+	private static boolean hasVisibleRerolls(DecodedItem item) {
+		return item.hasRerollCount() && item.rerollCount() > 0;
+	}
+
+	private static int measureNameHeight(DecodedItem item) {
+		BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+		Graphics2D g = image.createGraphics();
+		try {
+			g.setFont(NAME_FONT);
+			FontMetrics metrics = g.getFontMetrics();
+			int lineCount = wrap(metrics, item.name(), WIDTH - PAD * 2).size();
+			if (lineCount == 0) {
+				lineCount = 1;
+			}
+			boolean stackedPercent = item.hasOverall() && metrics.stringWidth(item.name() + String.format("  [%.2f%%]", item.overallPercent())) > WIDTH - PAD * 2;
+			return lineCount * NAME_LINE_H + (stackedPercent ? NAME_LINE_H : 0) - 10;
+		} finally {
+			g.dispose();
+		}
 	}
 
 	private static int wrappedLineCount(Font font, String text) {
@@ -330,17 +370,6 @@ public final class ItemCardRenderer {
 
 	private static void drawCentered(Graphics2D g, String text, int y) {
 		g.drawString(text, (WIDTH - g.getFontMetrics().stringWidth(text)) / 2, y);
-	}
-
-	private static Color powderColor(String element) {
-		return switch (element.toLowerCase(Locale.ROOT)) {
-			case "earth" -> new Color(0x5E, 0xD4, 0x5E);
-			case "thunder" -> new Color(0xFF, 0xC8, 0x3A);
-			case "water" -> new Color(0x4E, 0xD6, 0xFF);
-			case "fire" -> new Color(0xFF, 0x6A, 0x4A);
-			case "air" -> new Color(0xE8, 0xE8, 0xE8);
-			default -> POWDER_EMPTY;
-		};
 	}
 
 	private static Color weightingSourceColor(String source) {
