@@ -3,6 +3,7 @@ package tel.eden.mod.item;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -12,159 +13,308 @@ import net.fabricmc.loader.api.FabricLoader;
 import tel.eden.mod.EdenLogger;
 
 /**
- * Decodes a Wynntils item-sharing string into a {@link DecodedItem} by calling
- * Wynntils' own decoder at runtime via reflection.
+ * Decodes a Wynntils chat-share payload into the smaller {@link DecodedItem} model
+ * used by EdenMod's renderer.
  *
- * <p>Wynntils is an optional dependency; the bot only needs <em>one</em> online
- * member running it to render shared items. Reflection (rather than compiling
- * against Wynntils) keeps this mod self-contained and dodges mapping issues, at the
- * cost of being sensitive to Wynntils API changes — so every step fails gracefully
- * and logs, and the feature simply no-ops when Wynntils is absent or its API moved.
+ * <p>Wynntils is optional, so every interaction is reflective and best-effort. If
+ * Wynntils is absent or its API changes, shared-item rendering simply no-ops rather
+ * than taking down chat handling.
  */
 public final class WynntilsItemDecoder {
 	private static final EdenLogger LOGGER = EdenLogger.get();
+	private static final String WYNNTILS_BUFFER = "com.wynntils.utils.EncodedByteBuffer";
+	private static final String WYNNTILS_ITEM_ENCODING_MODEL = "com.wynntils.core.components.Models";
+	private static final String WYNNTILS_ITEM_WEIGHT_SERVICES = "com.wynntils.core.components.Services";
+	private static final String WYNNTILS_WEIGHT_SOURCE = "com.wynntils.models.gear.type.ItemWeightSource";
+	private static final String WYNNTILS_STAT_CALCULATOR = "com.wynntils.models.stats.StatCalculator";
 
 	private WynntilsItemDecoder() {
 	}
 
-	/** Whether Wynntils is installed (a precondition for decoding). */
+	/** Whether Wynntils is installed. */
 	public static boolean isAvailable() {
 		return FabricLoader.getInstance().isModLoaded("wynntils");
 	}
 
 	/**
 	 * Decode {@code itemString} (optionally with a crafted {@code craftedName}) into a
-	 * card model, or empty if Wynntils is unavailable, the item isn't gear, or
-	 * decoding failed (all logged at debug).
+	 * card model, or empty if Wynntils is unavailable, the item isn't supported, or
+	 * decoding failed.
 	 */
 	public static Optional<DecodedItem> decode(String itemString, String craftedName) {
 		if (!isAvailable()) {
 			return Optional.empty();
 		}
 		try {
-			Object buffer = call(Class.forName("com.wynntils.utils.EncodedByteBuffer"), null, "fromUtf16String", new Class<?>[]{String.class}, itemString);
-			Object encodingModel = staticField("com.wynntils.core.components.Models", "ItemEncoding");
+			Class<?> bufferClass = Class.forName(WYNNTILS_BUFFER);
+			Object buffer = call(bufferClass, null, "fromUtf16String", new Class<?>[]{String.class}, itemString);
+			Object encodingModel = staticField(WYNNTILS_ITEM_ENCODING_MODEL, "ItemEncoding");
 			Object errorOr = invokeDecode(encodingModel, buffer, craftedName);
 			if (errorOr == null || (boolean) call(errorOr, "hasError")) {
 				LOGGER.warn("Wynntils could not decode shared item: {}", errorOr == null ? "no matching decode method" : call(errorOr, "getError"));
 				return Optional.empty();
 			}
-			Object wynnItem = call(errorOr, "getValue");
-			return buildCard(wynnItem);
+			return buildCard(call(errorOr, "getValue"));
 		} catch (ReflectiveOperationException | RuntimeException e) {
 			LOGGER.warn("Shared-item decode failed via Wynntils reflection: {}", e.toString());
 			return Optional.empty();
 		}
 	}
 
-	/** Build the card model from a decoded Wynntils gear item (duck-typed). */
-	private static Optional<DecodedItem> buildCard(Object gearItem) throws ReflectiveOperationException {
-		if (gearItem == null || !hasMethod(gearItem, "getIdentifications")) {
-			// Not a gear item (tome/charm/crafted) — unsupported for now.
+	/** Build the renderer model from a decoded Wynntils item (duck-typed). */
+	private static Optional<DecodedItem> buildCard(Object wynnItem) throws ReflectiveOperationException {
+		if (wynnItem == null || !hasMethod(wynnItem, "getIdentifications")) {
 			return Optional.empty();
 		}
-		String name = String.valueOf(call(gearItem, "getName"));
 
-		Object tier = callOrNull(gearItem, "getGearTier");
+		String name = String.valueOf(call(wynnItem, "getName"));
+		Object tier = callOrNull(wynnItem, "getGearTier");
+		Object type = callOrNull(wynnItem, "getGearType");
+
 		String tierName = tier == null ? "" : prettyEnum(String.valueOf(call(tier, "getName")));
-		int tierColor = resolveRarityColor(tierName, tierColor(tier));
-
-		Object type = callOrNull(gearItem, "getGearType");
 		String typeName = type == null ? "" : prettyEnum(enumName(type));
 
-		boolean hasOverall = Boolean.TRUE.equals(callOrNull(gearItem, "hasOverallValue"));
-		float overall = hasOverall ? ((Number) call(gearItem, "getOverallPercentage")).floatValue() : -1f;
-
-		int powderSlots = numberOr(callOrNull(gearItem, "getPowderSlots"), 0);
-
-		List<DecodedItem.Identification> ids = buildIdentifications(gearItem);
-		return Optional.of(new DecodedItem(name, tierName, tierColor, typeName, overall, ids, powderSlots));
+		return Optional.of(new DecodedItem(
+				name,
+				tierName,
+				resolveRarityColor(tierName, tierColor(tier)),
+				typeName,
+				resolveOverallPercent(wynnItem),
+				buildIdentifications(wynnItem),
+				buildMajorIds(wynnItem),
+				buildWeightings(wynnItem),
+				buildPowders(wynnItem),
+				numberOr(callOrNull(wynnItem, "getPowderSlots"), 0)));
 	}
 
-	private static List<DecodedItem.Identification> buildIdentifications(Object gearItem) throws ReflectiveOperationException {
-		List<DecodedItem.Identification> out = new ArrayList<>();
-		Object identifications = call(gearItem, "getIdentifications");
-		Object possibleValues = callOrNull(gearItem, "getPossibleValues");
+	private static List<DecodedItem.Identification> buildIdentifications(Object wynnItem) throws ReflectiveOperationException {
+		List<DecodedItem.Identification> identifications = new ArrayList<>();
+		Object actualValues = call(wynnItem, "getIdentifications");
+		Object possibleValues = callOrNull(wynnItem, "getPossibleValues");
 		Map<Object, Object> possibleByStat = indexByStatType(possibleValues);
 
-		if (!(identifications instanceof List<?> list)) {
-			return out;
+		if (!(actualValues instanceof List<?> actualList)) {
+			return identifications;
 		}
 
-		class IdWithOrder {
-			final DecodedItem.Identification id;
-			final int ordinal;
-			IdWithOrder(DecodedItem.Identification id, int ordinal) {
-				this.id = id;
-				this.ordinal = ordinal;
-			}
+		record OrderedIdentification(DecodedItem.Identification id, int ordinal) {
 		}
-		List<IdWithOrder> orderedList = new ArrayList<>();
 
-		for (Object actual : list) {
+		List<OrderedIdentification> ordered = new ArrayList<>();
+		for (Object actual : actualList) {
 			Object statType = call(actual, "statType");
 			int value = numberOr(call(actual, "value"), 0);
 			String statName = String.valueOf(call(statType, "getDisplayName"));
-			String unit = statUnit(statType);
-			String valueText = (value >= 0 ? "+" : "") + value + unit;
-
-			Object possible = possibleByStat.get(statType);
-			float roll = possible == null ? -1f : rollPercent(actual, possible);
-			DecodedItem.Identification id = new DecodedItem.Identification(statName, valueText, roll, value >= 0);
-
-			int ordinal = 9999;
-			if (statType instanceof Enum<?> e) {
-				ordinal = e.ordinal();
-			} else {
-				try {
-					Object ord = call(statType, "ordinal");
-					if (ord instanceof Number n) {
-						ordinal = n.intValue();
-					}
-				} catch (Exception ignored) {
-				}
-			}
-			orderedList.add(new IdWithOrder(id, ordinal));
+			String valueText = (value >= 0 ? "+" : "") + value + statUnit(statType);
+			float roll = rollPercent(actual, possibleByStat.get(statType));
+			ordered.add(new OrderedIdentification(
+					new DecodedItem.Identification(statName, valueText, roll, value >= 0),
+					statOrdinal(statType)));
 		}
 
-		orderedList.sort(java.util.Comparator.comparingInt(x -> x.ordinal));
-
-		for (IdWithOrder item : orderedList) {
-			out.add(item.id);
+		ordered.sort(Comparator.comparingInt(OrderedIdentification::ordinal));
+		for (OrderedIdentification orderedIdentification : ordered) {
+			identifications.add(orderedIdentification.id());
 		}
-		return out;
+		return identifications;
 	}
 
-	// -- value/roll computation -------------------------------------------------
-
-	/** The roll quality 0-100 for an identification, via Wynntils' calculator if present. */
-	private static float rollPercent(Object actual, Object possible) {
-		// Prefer Wynntils' own StatCalculator.getPercentage so inverted stats match.
+	private static List<DecodedItem.MajorIdentification> buildMajorIds(Object wynnItem) {
+		List<DecodedItem.MajorIdentification> majorIds = new ArrayList<>();
 		try {
-			Class<?> calc = Class.forName("com.wynntils.models.stats.StatCalculator");
-			for (Method m : calc.getMethods()) {
-				if (m.getName().equals("getPercentage") && m.getParameterCount() == 2) {
-					Object result = m.invoke(null, actual, possible);
-					if (result instanceof Number n) {
-						return n.floatValue();
+			Object info = callOrNull(wynnItem, "getItemInfo");
+			Object fixedStats = info == null ? null : callOrNull(info, "fixedStats");
+			Object major = unwrapOptional(fixedStats == null ? null : callOrNull(fixedStats, "majorIds"));
+			if (major == null) {
+				return majorIds;
+			}
+			String name = stringOrBlank(callOrNull(major, "name"));
+			String description = readableStyledText(callOrNull(major, "lore"));
+			if (!name.isBlank() || !description.isBlank()) {
+				majorIds.add(new DecodedItem.MajorIdentification(name, description));
+			}
+		} catch (RuntimeException ignored) {
+		}
+		return majorIds;
+	}
+
+	private static List<DecodedItem.Weighting> buildWeightings(Object wynnItem) {
+		List<DecodedItem.Weighting> weightings = new ArrayList<>();
+		try {
+			// Weightings are exposed via a service rather than the decoded item itself, so
+			// look them up by item name after the item has been reconstructed.
+			Object services = staticField(WYNNTILS_ITEM_WEIGHT_SERVICES, "ItemWeight");
+			Class<?> sourceClass = Class.forName(WYNNTILS_WEIGHT_SOURCE);
+			Object[] sources = sourceClass.getEnumConstants();
+			if (services == null || sources == null) {
+				return weightings;
+			}
+
+			Method getItemWeighting = services.getClass().getMethod("getItemWeighting", String.class, sourceClass);
+			Method calculateWeighting = findMethod(services.getClass(), "calculateWeighting", 2);
+			if (calculateWeighting == null) {
+				return weightings;
+			}
+
+			String itemName = String.valueOf(call(wynnItem, "getName"));
+			for (Object source : sources) {
+				String sourceName = enumName(source);
+				if (!sourceName.equals("NORI") && !sourceName.equals("WYNNPOOL")) {
+					continue;
+				}
+				Object weightingValues = getItemWeighting.invoke(services, itemName, source);
+				if (!(weightingValues instanceof List<?> weightingList) || weightingList.isEmpty()) {
+					continue;
+				}
+				for (Object weighting : weightingList) {
+					Object percentage = calculateWeighting.invoke(services, weighting, wynnItem);
+					if (percentage instanceof Number n) {
+						Object scaleName = callOrNull(weighting, "weightName");
+						weightings.add(new DecodedItem.Weighting(prettyEnum(sourceName), String.valueOf(scaleName), n.floatValue()));
 					}
 				}
 			}
 		} catch (ReflectiveOperationException | RuntimeException ignored) {
-			// Fall back to a range-based estimate below.
 		}
+		weightings.sort(Comparator.comparing(DecodedItem.Weighting::source).thenComparing(DecodedItem.Weighting::scaleName));
+		return weightings;
+	}
+
+	private static List<DecodedItem.PowderSlot> buildPowders(Object wynnItem) {
+		List<DecodedItem.PowderSlot> powders = new ArrayList<>();
 		try {
-			Object range = call(possible, "range");
-			int low = numberOr(call(range, "low"), 0);
-			int high = numberOr(call(range, "high"), 0);
-			int value = numberOr(call(actual, "value"), 0);
-			if (high == low) {
+			// Keep this extraction path in place even though chat-shared items currently
+			// decode with no powder contents in the cases we tested. If Wynntils starts
+			// exposing powders here later, EdenMod will automatically render them instead
+			// of the current neutral placeholder circles.
+			Object powderValues = callOrNull(wynnItem, "getPowders");
+			if (!(powderValues instanceof List<?> powderList) || powderList.isEmpty()) {
+				// Some Wynntils item types expose powders only on the nested instance record.
+				Object instance = unwrapOptional(callOrNull(wynnItem, "getItemInstance"));
+				if (instance != null) {
+					powderValues = callOrNull(instance, "powders");
+				}
+			}
+			if (!(powderValues instanceof List<?> powderList)) {
+				return powders;
+			}
+
+			for (Object powder : powderList) {
+				String element = powderElementName(powder);
+				if (!element.isBlank()) {
+					powders.add(new DecodedItem.PowderSlot(element));
+				}
+			}
+		} catch (RuntimeException ignored) {
+		}
+		return powders;
+	}
+
+	private static float resolveOverallPercent(Object wynnItem) {
+		try {
+			if (Boolean.TRUE.equals(callOrNull(wynnItem, "hasOverallValue"))) {
+				Object overall = callOrNull(wynnItem, "getOverallPercentage");
+				if (overall instanceof Number n) {
+					return n.floatValue();
+				}
+			}
+		} catch (RuntimeException ignored) {
+		}
+
+		try {
+			// Crafted gear uses vanilla roll meters rather than the normal overall-quality
+			// field, so mirror Wynntils' own fallback when the direct value is absent.
+			Object identifications = callOrNull(wynnItem, "getIdentifications");
+			if (!(identifications instanceof List<?> list) || list.isEmpty()) {
 				return -1f;
 			}
-			float pct = (value - low) / (float) (high - low) * 100f;
-			return Math.max(0f, Math.min(100f, pct));
-		} catch (ReflectiveOperationException | RuntimeException e) {
+			Class<?> calculator = Class.forName(WYNNTILS_STAT_CALCULATOR);
+			Object overall = unwrapOptional(calculator.getMethod("calculateOverallQualityFromVanillaMeters", List.class).invoke(null, list));
+			return overall instanceof Number n ? n.floatValue() : -1f;
+		} catch (ReflectiveOperationException | RuntimeException ignored) {
 			return -1f;
+		}
+	}
+
+	/** Roll quality 0-100 for one identification. */
+	private static float rollPercent(Object actual, Object possible) {
+		if (possible != null) {
+			try {
+				Class<?> calculator = Class.forName(WYNNTILS_STAT_CALCULATOR);
+				Method getPercentage = findMethod(calculator, "getPercentage", 2);
+				if (getPercentage != null) {
+					Object result = getPercentage.invoke(null, actual, possible);
+					if (result instanceof Number n) {
+						return n.floatValue();
+					}
+				}
+			} catch (ReflectiveOperationException | RuntimeException ignored) {
+			}
+		}
+
+		float vanillaMeterPercent = vanillaMeterPercent(actual);
+		if (vanillaMeterPercent >= 0f) {
+			return vanillaMeterPercent;
+		}
+
+		if (possible != null) {
+			try {
+				// Last-resort approximation if Wynntils' calculator path is unavailable.
+				Object range = call(possible, "range");
+				int low = numberOr(call(range, "low"), 0);
+				int high = numberOr(call(range, "high"), 0);
+				int value = numberOr(call(actual, "value"), 0);
+				if (high == low) {
+					return -1f;
+				}
+				float percent = (value - low) / (float) (high - low) * 100f;
+				return Math.max(0f, Math.min(100f, percent));
+			} catch (ReflectiveOperationException | RuntimeException ignored) {
+			}
+		}
+
+		return -1f;
+	}
+
+	private static float vanillaMeterPercent(Object actual) {
+		try {
+			Object vanillaMeter = unwrapOptional(callOrNull(actual, "vanillaMeter"));
+			if (vanillaMeter instanceof Character c) {
+				Class<?> calculator = Class.forName(WYNNTILS_STAT_CALCULATOR);
+				Object result = calculator.getMethod("getPercentageFromVanillaMeter", char.class).invoke(null, c.charValue());
+				return result instanceof Number n ? n.floatValue() : -1f;
+			}
+		} catch (ReflectiveOperationException | RuntimeException ignored) {
+		}
+		return -1f;
+	}
+
+	private static String powderElementName(Object powder) {
+		String element = enumName(powder);
+		if (element.isBlank() || element.equals(String.valueOf(powder))) {
+			Object elementObj = callOrNull(powder, "getElement");
+			if (elementObj != null) {
+				element = enumName(elementObj);
+			}
+		}
+		if (element.isBlank()) {
+			Object powderName = callOrNull(powder, "getName");
+			if (powderName != null) {
+				element = String.valueOf(powderName);
+			}
+		}
+		return prettyEnum(element);
+	}
+
+	private static int statOrdinal(Object statType) {
+		if (statType instanceof Enum<?> e) {
+			return e.ordinal();
+		}
+		try {
+			Object ordinal = call(statType, "ordinal");
+			return ordinal instanceof Number n ? n.intValue() : Integer.MAX_VALUE;
+		} catch (ReflectiveOperationException | RuntimeException ignored) {
+			return Integer.MAX_VALUE;
 		}
 	}
 
@@ -196,20 +346,46 @@ public final class WynntilsItemDecoder {
 		return map;
 	}
 
-	// -- reflection helpers -----------------------------------------------------
-
-	/** Find a (EncodedByteBuffer, String)->ErrorOr decode method by shape, name-agnostic. */
+	/** Prefer Wynntils' chat-share decode path, then fall back to the generic one. */
 	private static Object invokeDecode(Object model, Object buffer, String craftedName) throws ReflectiveOperationException {
 		if (model == null) {
 			return null;
 		}
-		for (Method m : model.getClass().getMethods()) {
-			Class<?>[] params = m.getParameterTypes();
+
+		Method trusted = findSpecificMethod(model.getClass(), "decodeItemWithTrustedName", buffer.getClass(), String.class);
+		if (trusted != null) {
+			return trusted.invoke(model, buffer, craftedName);
+		}
+
+		Method plain = findSpecificMethod(model.getClass(), "decodeItem", buffer.getClass(), String.class);
+		if (plain != null) {
+			return plain.invoke(model, buffer, craftedName);
+		}
+
+		for (Method method : model.getClass().getMethods()) {
+			Class<?>[] params = method.getParameterTypes();
 			if (params.length == 2 && params[0].isInstance(buffer) && params[1] == String.class) {
-				return m.invoke(model, buffer, craftedName);
+				return method.invoke(model, buffer, craftedName);
 			}
 		}
 		return null;
+	}
+
+	private static Method findMethod(Class<?> type, String name, int parameterCount) {
+		for (Method method : type.getMethods()) {
+			if (method.getName().equals(name) && method.getParameterCount() == parameterCount) {
+				return method;
+			}
+		}
+		return null;
+	}
+
+	private static Method findSpecificMethod(Class<?> type, String name, Class<?>... parameterTypes) {
+		try {
+			return type.getMethod(name, parameterTypes);
+		} catch (NoSuchMethodException ignored) {
+			return null;
+		}
 	}
 
 	private static Object staticField(String className, String fieldName) throws ReflectiveOperationException {
@@ -218,8 +394,8 @@ public final class WynntilsItemDecoder {
 	}
 
 	private static boolean hasMethod(Object target, String name) {
-		for (Method m : target.getClass().getMethods()) {
-			if (m.getName().equals(name) && m.getParameterCount() == 0) {
+		for (Method method : target.getClass().getMethods()) {
+			if (method.getName().equals(name) && method.getParameterCount() == 0) {
 				return true;
 			}
 		}
@@ -236,6 +412,25 @@ public final class WynntilsItemDecoder {
 		} catch (ReflectiveOperationException | RuntimeException e) {
 			return null;
 		}
+	}
+
+	private static Object unwrapOptional(Object value) {
+		return value instanceof Optional<?> optional ? optional.orElse(null) : value;
+	}
+
+	private static String readableStyledText(Object styledText) {
+		if (styledText == null) {
+			return "";
+		}
+		Object text = callOrNull(styledText, "getString");
+		if (text == null) {
+			text = callOrNull(styledText, "toString");
+		}
+		return stripMinecraftFormatting(stringOrBlank(text)).replaceAll("\\s+", " ").trim();
+	}
+
+	private static String stripMinecraftFormatting(String text) {
+		return text == null ? "" : text.replaceAll("[\\u00A7§].", "");
 	}
 
 	private static Object call(Class<?> cls, Object target, String method, Class<?>[] types, Object... args) throws ReflectiveOperationException {
@@ -256,6 +451,10 @@ public final class WynntilsItemDecoder {
 
 	private static int numberOr(Object value, int fallback) {
 		return value instanceof Number n ? n.intValue() : fallback;
+	}
+
+	private static String stringOrBlank(Object value) {
+		return value == null ? "" : String.valueOf(value);
 	}
 
 	private static int resolveRarityColor(String tierName, int defaultColor) {

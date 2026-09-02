@@ -11,11 +11,27 @@ import java.util.List;
  * @param type           the gear type display name (e.g. {@code "Bow"}), may be empty
  * @param overallPercent the overall roll quality 0-100, or a negative value if absent
  * @param identifications the rolled identifications, top to bottom
+ * @param majorIds       the item's major IDs, if any
+ * @param weightings     item-weight scores exposed by Wynntils services, if any
+ * @param powders        the powders currently socketed into the item, in order
  * @param powderSlots    the number of powder slots on the item
  */
-public record DecodedItem(String name, String tier, int tierColor, String type, float overallPercent, List<Identification> identifications, int powderSlots) {
+public record DecodedItem(
+		String name,
+		String tier,
+		int tierColor,
+		String type,
+		float overallPercent,
+		List<Identification> identifications,
+		List<MajorIdentification> majorIds,
+		List<Weighting> weightings,
+		List<PowderSlot> powders,
+		int powderSlots) {
 	public DecodedItem {
 		identifications = List.copyOf(identifications);
+		majorIds = List.copyOf(majorIds);
+		weightings = List.copyOf(weightings);
+		powders = List.copyOf(powders);
 	}
 
 	/** Whether an overall roll quality is present (gear with variable stats). */
@@ -37,5 +53,32 @@ public record DecodedItem(String name, String tier, int tierColor, String type, 
 		public boolean hasRoll() {
 			return rollPercent >= 0;
 		}
+	}
+
+	/**
+	 * One major-ID block.
+	 *
+	 * @param name        major-ID name (e.g. {@code "Rally"})
+	 * @param description plain-text lore/description
+	 */
+	public record MajorIdentification(String name, String description) {
+	}
+
+	/**
+	 * One weighting row from a source such as Nori or Wynnpool.
+	 *
+	 * @param source     weighting source name
+	 * @param scaleName  weighting profile name
+	 * @param percentage computed score 0-100
+	 */
+	public record Weighting(String source, String scaleName, float percentage) {
+	}
+
+	/**
+	 * One powder socket entry.
+	 *
+	 * @param element the powder element name (e.g. {@code "Air"})
+	 */
+	public record PowderSlot(String element) {
 	}
 }
