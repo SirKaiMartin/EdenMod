@@ -74,19 +74,7 @@ public final class WynntilsItemDecoder {
 		String tierName = tier == null ? "" : prettyEnum(String.valueOf(call(tier, "getName")));
 		String typeName = type == null ? "" : prettyEnum(enumName(type));
 
-		return Optional.of(new DecodedItem(
-				name,
-				tierName,
-				resolveRarityColor(tierName, tierColor(tier)),
-				typeName,
-				resolveOverallPercent(wynnItem),
-				buildIdentifications(wynnItem),
-				buildMajorIds(wynnItem),
-				buildWeightings(wynnItem),
-				buildShinyTracker(wynnItem),
-				buildPowders(wynnItem),
-				numberOr(callOrNull(wynnItem, "getPowderSlots"), 0),
-				resolveRerollCount(wynnItem)));
+		return Optional.of(new DecodedItem(name, tierName, resolveRarityColor(tierName, tierColor(tier)), typeName, resolveOverallPercent(wynnItem), buildIdentifications(wynnItem), buildMajorIds(wynnItem), buildWeightings(wynnItem), buildShinyTracker(wynnItem), buildPowders(wynnItem), numberOr(callOrNull(wynnItem, "getPowderSlots"), 0), resolveRerollCount(wynnItem)));
 	}
 
 	private static List<DecodedItem.Identification> buildIdentifications(Object wynnItem) throws ReflectiveOperationException {
@@ -109,9 +97,7 @@ public final class WynntilsItemDecoder {
 			String statName = normalizeRenderableText(String.valueOf(call(statType, "getDisplayName")));
 			String valueText = normalizeRenderableText((value >= 0 ? "+" : "") + value + statUnit(statType));
 			float roll = rollPercent(actual, possibleByStat.get(statType));
-			ordered.add(new OrderedIdentification(
-					new DecodedItem.Identification(statName, valueText, roll, value >= 0),
-					statOrdinal(statType)));
+			ordered.add(new OrderedIdentification(new DecodedItem.Identification(statName, valueText, roll, value >= 0), statOrdinal(statType)));
 		}
 
 		ordered.sort(Comparator.comparingInt(OrderedIdentification::ordinal));

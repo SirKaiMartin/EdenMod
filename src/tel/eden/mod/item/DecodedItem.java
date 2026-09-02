@@ -19,19 +19,7 @@ import java.util.List;
  * @param powderSlots    the number of powder slots on the item
  * @param rerollCount    the number of rerolls, or a negative value if not applicable
  */
-public record DecodedItem(
-		String name,
-		String tier,
-		int tierColor,
-		String type,
-		float overallPercent,
-		List<Identification> identifications,
-		List<MajorIdentification> majorIds,
-		List<Weighting> weightings,
-		ShinyTracker shinyTracker,
-		List<PowderSlot> powders,
-		int powderSlots,
-		int rerollCount) {
+public record DecodedItem(String name, String tier, int tierColor, String type, float overallPercent, List<Identification> identifications, List<MajorIdentification> majorIds, List<Weighting> weightings, ShinyTracker shinyTracker, List<PowderSlot> powders, int powderSlots, int rerollCount) {
 	public DecodedItem {
 		identifications = List.copyOf(identifications);
 		majorIds = List.copyOf(majorIds);
