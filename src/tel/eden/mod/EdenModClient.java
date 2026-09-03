@@ -36,7 +36,6 @@ import tel.eden.mod.gui.PartyManageScreen;
 import tel.eden.mod.item.DecodedItem;
 import tel.eden.mod.item.ItemCardRenderer;
 import tel.eden.mod.item.ItemStringDetector;
-import tel.eden.mod.item.WynntilsItemDecoder;
 import tel.eden.mod.net.BridgeWebSocketClient;
 import tel.eden.mod.net.PartyInfo;
 import tel.eden.mod.net.GiveawayCandidate;
@@ -2285,7 +2284,7 @@ public final class EdenModClient implements ClientModInitializer {
 	 * No-op unless enabled, Wynntils is installed, and a sender can be resolved.
 	 */
 	private void maybeRelayItemCard(BridgeWebSocketClient current, Component message) {
-		if (!WynntilsItemDecoder.isAvailable()) {
+		if (!isItemDecoderAvailable()) {
 			return;
 		}
 		Optional<ItemStringDetector.Detected> detected = ItemStringDetector.detect(message.getString());
@@ -2304,7 +2303,7 @@ public final class EdenModClient implements ClientModInitializer {
 
 	private void renderAndSendItemCard(BridgeWebSocketClient current, CapturedMessage who, ItemStringDetector.Detected item) {
 		try {
-			Optional<DecodedItem> decoded = WynntilsItemDecoder.decode(item.itemString(), item.craftedName());
+			Optional<DecodedItem> decoded = decodeSharedItem(item.itemString(), item.craftedName());
 			if (decoded.isEmpty()) {
 				return;
 			}
@@ -2314,6 +2313,29 @@ public final class EdenModClient implements ClientModInitializer {
 			current.sendItemCard(who.username(), who.nickname(), image, card.name() + "|" + overall);
 		} catch (Exception e) {
 			LOGGER.warn("Failed to render/relay shared item card", e);
+		}
+	}
+
+	private boolean isItemDecoderAvailable() {
+		try {
+			Class<?> decoder = Class.forName("tel.eden.mod.item.WynntilsItemDecoder");
+			Object available = decoder.getMethod("isAvailable").invoke(null);
+			return available instanceof Boolean b && b;
+		} catch (Throwable t) {
+			LOGGER.warn("Shared-item decoder unavailable", t);
+			return false;
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private Optional<DecodedItem> decodeSharedItem(String itemString, String craftedName) {
+		try {
+			Class<?> decoder = Class.forName("tel.eden.mod.item.WynntilsItemDecoder");
+			Object decoded = decoder.getMethod("decode", String.class, String.class).invoke(null, itemString, craftedName);
+			return decoded instanceof Optional<?> optional ? (Optional<DecodedItem>) optional : Optional.empty();
+		} catch (Throwable t) {
+			LOGGER.warn("Shared-item decoder failed to load", t);
+			return Optional.empty();
 		}
 	}
 
