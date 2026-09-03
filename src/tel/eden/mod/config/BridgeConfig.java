@@ -189,6 +189,14 @@ public final class BridgeConfig {
 	/** Emotes detected as unlocked from Wynncraft's emotes menu (for the favorites picker). */
 	public List<String> emoteUnlocked = new ArrayList<>();
 
+	/** Permanently discovered hidden features. */
+	public List<String> unlockedSecrets = new ArrayList<>();
+
+	public static final String SECRET_BABY_PLAYERS = "baby_players";
+
+	/** Whether players are rendered at the unlocked baby-player size. */
+	public boolean babyPlayers = false;
+
 	/**
 	 * Saved HUD element positions as {@code name -> [xFraction, yFraction]} (0-1 of
 	 * the screen). Absent elements fall back to their built-in default anchor.
@@ -331,6 +339,9 @@ public final class BridgeConfig {
 					if (config.emoteUnlocked == null) {
 						config.emoteUnlocked = new ArrayList<>();
 					}
+					if (config.unlockedSecrets == null) {
+						config.unlockedSecrets = new ArrayList<>();
+					}
 					if (config.chatEmoteUiEnabled != null) {
 						config.chatEmoteToolsMode = config.chatEmoteUiEnabled ? ChatEmoteToolsMode.UI_AND_AUTO : ChatEmoteToolsMode.NONE;
 						config.chatEmoteUiEnabled = null;
@@ -367,6 +378,18 @@ public final class BridgeConfig {
 		BridgeConfig fresh = new BridgeConfig();
 		fresh.save();
 		return fresh;
+	}
+
+	public boolean isSecretUnlocked(String id) {
+		return unlockedSecrets.contains(id);
+	}
+
+	/** Remember a discovery once; subsequent activations do not rewrite the config. */
+	public void unlockSecret(String id) {
+		if (!unlockedSecrets.contains(id)) {
+			unlockedSecrets.add(id);
+			save();
+		}
 	}
 
 	/** Persist this config to disk. */

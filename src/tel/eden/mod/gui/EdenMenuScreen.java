@@ -2,11 +2,16 @@ package tel.eden.mod.gui;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundEvent;
+import org.lwjgl.glfw.GLFW;
 import tel.eden.mod.EdenModClient;
+import tel.eden.mod.config.BridgeConfig;
 
 public class EdenMenuScreen extends Screen {
 	private static final int BASE_CONTENT_WIDTH = 200;
@@ -20,12 +25,18 @@ public class EdenMenuScreen extends Screen {
 	private static final int MIN_TOP_SAFE_MARGIN = 20;
 	private static final int MIN_BOTTOM_SAFE_MARGIN = 36;
 	private static final int MIN_BUTTON_WIDTH = 170;
-
+	public static final float BABY_PLAYER_SCALE = 0.55f;
+	public static final float BABY_HEAD_SCALE = 1.5f;
+	private static final int[] KONAMI_CODE = {GLFW.GLFW_KEY_UP, GLFW.GLFW_KEY_UP, GLFW.GLFW_KEY_DOWN, GLFW.GLFW_KEY_DOWN, GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT, GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT, GLFW.GLFW_KEY_B, GLFW.GLFW_KEY_A};
+	private static final SoundEvent UI_BUTTON_CLICK_SOUND = SoundEvent.createVariableRangeEvent(Identifier.parse("edenmod:ui.button.click"));
+	private static final SoundEvent UI_TOAST_CHALLENGE_COMPLETE_SOUND = SoundEvent.createVariableRangeEvent(Identifier.parse("edenmod:ui.toast.challenge_complete"));
 	private static final Identifier LOGO_TEXTURE = Identifier.parse("edenmod:icon.png");
 	private static final int LOGO_W = 722;
 	private static final int LOGO_H = 693;
 
 	private EdenPanelLayout layout;
+	private final int[] konamiInput = new int[KONAMI_CODE.length];
+	private int konamiInputLength;
 
 	public EdenMenuScreen() {
 		super(Component.literal("Eden Bridge"));
@@ -106,6 +117,85 @@ public class EdenMenuScreen extends Screen {
 		String text2 = updateText;
 		guiGraphics.drawString(this.minecraft.font, text1, this.width - this.minecraft.font.width(text1) - BASE_META_MARGIN, BASE_META_MARGIN, 0xFFAAAAAA);
 		guiGraphics.drawString(this.minecraft.font, text2, this.width - this.minecraft.font.width(text2) - BASE_META_MARGIN, BASE_META_MARGIN + this.font.lineHeight + 1, pendingUpdate != null ? 0xFF55FF55 : 0xFFAAAAAA);
+	}
+
+	@Override
+	public boolean keyPressed(KeyEvent event) {
+		int key = event.key();
+		if (!isKonamiKey(key)) {
+			konamiInputLength = 0;
+			return super.keyPressed(event);
+		}
+
+		if (konamiInputLength == konamiInput.length) {
+			System.arraycopy(konamiInput, 1, konamiInput, 0, konamiInput.length - 1);
+			konamiInputLength--;
+		}
+		konamiInput[konamiInputLength++] = key;
+		int progress = konamiProgress();
+		if (progress > 0) {
+			playKonamiTick(progress);
+		}
+		if (progress == KONAMI_CODE.length) {
+			BridgeConfig config = EdenModClient.instance().config();
+			config.unlockSecret(BridgeConfig.SECRET_BABY_PLAYERS);
+			config.babyPlayers = !config.babyPlayers;
+			config.save();
+			konamiInputLength = 0;
+		}
+		return true;
+	}
+
+	public static boolean isBabyModeEnabled() {
+		return EdenModClient.instance().config().babyPlayers;
+	}
+
+	public static void setBabyModeEnabled(boolean enabled) {
+		EdenModClient.instance().config().babyPlayers = enabled;
+	}
+
+	private void playKonamiTick(int progress) {
+		if (progress == KONAMI_CODE.length) {
+			this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(UI_TOAST_CHALLENGE_COMPLETE_SOUND, 1.0f, 0.8f));
+			return;
+		}
+		float pitch = 0.75f + (progress * 0.06f);
+		this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(UI_BUTTON_CLICK_SOUND, pitch, 0.25f));
+	}
+
+	private int konamiProgress() {
+		for (int length = Math.min(konamiInputLength, KONAMI_CODE.length); length > 0; length--) {
+			int start = konamiInputLength - length;
+			boolean matches = true;
+			for (int i = 0; i < length; i++) {
+				if (!matchesKonamiPosition(i, konamiInput[start + i])) {
+					matches = false;
+					break;
+				}
+			}
+			if (matches) {
+				return length;
+			}
+		}
+		return 0;
+	}
+
+	private static boolean isKonamiKey(int key) {
+		return key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN || key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT || key == GLFW.GLFW_KEY_W || key == GLFW.GLFW_KEY_A || key == GLFW.GLFW_KEY_S || key == GLFW.GLFW_KEY_D || key == GLFW.GLFW_KEY_B;
+	}
+
+	private static boolean matchesKonamiPosition(int position, int key) {
+		int expected = KONAMI_CODE[position];
+		if (key == expected) {
+			return true;
+		}
+		return switch (expected) {
+			case GLFW.GLFW_KEY_UP -> key == GLFW.GLFW_KEY_W;
+			case GLFW.GLFW_KEY_DOWN -> key == GLFW.GLFW_KEY_S;
+			case GLFW.GLFW_KEY_LEFT -> key == GLFW.GLFW_KEY_A;
+			case GLFW.GLFW_KEY_RIGHT -> key == GLFW.GLFW_KEY_D;
+			default -> false;
+		};
 	}
 
 	private int bottomSafeMargin() {

@@ -41,10 +41,11 @@ public final class BridgeConfigScreen extends Screen {
 
 	private static final int MAX_CONTENT_WIDTH = 420;
 	private static final int ROW_HEIGHT = 24;
+	private static final int LIST_TOP_PADDING = 4;
 	private static final int CONTROL_W = 96;
 	private static final int RESET_W = 20;
 	private static final int SCROLLBAR_W = 6;
-	private static final int HEADER_BOTTOM = 112;
+	private static final int HEADER_BOTTOM = 120;
 	private static final int FOOTER_HEIGHT = 40;
 	// Fraction of the remaining distance the list glides each frame (smoothness).
 	private static final double SCROLL_EASE = 0.4;
@@ -80,6 +81,9 @@ public final class BridgeConfigScreen extends Screen {
 		linkButton = this.addRenderableWidget(Button.builder(Component.literal("Link account"), button -> startLinkFlow()).bounds(cx, 92, cw, 20).build());
 
 		// --- One line per setting; the list handles layout + smooth scrolling. ---
+		if (config.isSecretUnlocked(BridgeConfig.SECRET_BABY_PLAYERS)) {
+			addToggleRow("Baby players", EdenMenuScreen::isBabyModeEnabled, EdenMenuScreen::setBabyModeEnabled, "On", "Off", false);
+		}
 		addToggleRow("Bridge", () -> config.enabled, v -> config.enabled = v, "Enabled", "Disabled", true);
 		addToggleRow("My login/logout messages", () -> config.announceSelfPresence, v -> config.announceSelfPresence = v, "On", "Off", true);
 		addToggleRow("Party feed", () -> config.partyAnnounce, v -> config.partyAnnounce = v, "On", "Off", true);
@@ -242,7 +246,7 @@ public final class BridgeConfigScreen extends Screen {
 	}
 
 	private int contentHeight() {
-		return rows.size() * ROW_HEIGHT;
+		return LIST_TOP_PADDING + rows.size() * ROW_HEIGHT;
 	}
 
 	private double maxScroll() {
@@ -266,7 +270,7 @@ public final class BridgeConfigScreen extends Screen {
 	}
 
 	private int rowY(int index) {
-		return (int) Math.round(listTop() - scroll + index * ROW_HEIGHT);
+		return (int) Math.round(listTop() + LIST_TOP_PADDING - scroll + index * ROW_HEIGHT);
 	}
 
 	private boolean rowInView(int rowY) {

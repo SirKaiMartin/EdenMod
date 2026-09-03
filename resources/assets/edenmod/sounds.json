@@ -1,0 +1,12 @@
+{
+  "ui.button.click": {
+    "sounds": [
+      "minecraft:random/click_stereo"
+    ]
+  },
+  "ui.toast.challenge_complete": {
+    "sounds": [
+      "minecraft:ui/toast/challenge_complete"
+    ]
+  }
+}

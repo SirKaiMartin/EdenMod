@@ -4,6 +4,13 @@
   "package": "tel.eden.mod.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "BabyPlayerEmoteDisplayMixin",
+    "BabyPlayerEmoteMixin",
+    "BabyPlayerEmoteHeldItemMixin",
+    "BabyPlayerHeadMixin",
+    "BabyPlayerModelMixin",
+    "BabyPlayerScaleMixin",
+    "BabyPlayerShadowMixin",
     "BossHealthOverlayAccessor",
     "ChatScreenMixin",
     "ClientPacketListenerCommandAliasMixin",
