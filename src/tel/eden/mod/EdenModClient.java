@@ -325,14 +325,24 @@ public final class EdenModClient implements ClientModInitializer {
 		return openEmotePickerKey.saveString().startsWith("key.mouse.");
 	}
 
-	public boolean shouldOpenEmotePickerOnChatOpen() {
-		Minecraft mc = Minecraft.getInstance();
-		if (isOpenEmotePickerMouseBound() || mc.options == null) {
-			return false;
-		}
-		return openEmotePickerKey.saveString().equals(mc.options.keyChat.saveString()) && openEmotePickerKey.isDown();
+	public boolean matchesOpenEmotePickerKey(net.minecraft.client.input.KeyEvent event) {
+		return openEmotePickerKey.matches(event);
 	}
 
+	/**
+	 * If the picker shares chat's gameplay keybind, vanilla opens chat before the chat
+	 * screen can inspect the triggering press. Detect that held key during chat init
+	 * so the picker still opens without requiring a second press.
+	 */
+	public boolean shouldOpenEmotePickerOnChatOpen() {
+		Minecraft mc = Minecraft.getInstance();
+		if (!shouldAllowGameplayEmotePickerOpen() || isOpenEmotePickerMouseBound() || mc.options == null) {
+			return false;
+		}
+		return edenmod$matchesGameplayChatKeybind(mc.options.keyChat) || edenmod$matchesGameplayChatKeybind(mc.options.keyCommand);
+	}
+
+	/** Queue the emote picker for the next chat screen, opening chat if needed. */
 	public void openCenteredEmotePicker() {
 		Minecraft mc = Minecraft.getInstance();
 		requestCenteredEmotePicker();
@@ -364,6 +374,24 @@ public final class EdenModClient implements ClientModInitializer {
 	/** Members owed aspects, highest first, as of the last backend reply. */
 	public java.util.List<PendingEntry> knownPendingAspects() {
 		return knownPendingAspects;
+	}
+
+	private boolean shouldAllowGameplayEmotePickerOpen() {
+		if (!config.emotePickerOpenFromGameplay) {
+			return false;
+		}
+		return switch (config.chatEmoteToolsMode) {
+			case UI, UI_AND_AUTO -> true;
+			case AUTO, NONE -> false;
+		};
+	}
+
+	private boolean shouldOpenEmotePickerFromGameplay(Minecraft client) {
+		return shouldAllowGameplayEmotePickerOpen() && client.screen == null;
+	}
+
+	private boolean edenmod$matchesGameplayChatKeybind(KeyMapping vanillaKey) {
+		return openEmotePickerKey.saveString().equals(vanillaKey.saveString()) && openEmotePickerKey.isDown();
 	}
 
 	/** The error from the last aspects-pending reply, or {@code null} if it succeeded. */
@@ -614,10 +642,12 @@ public final class EdenModClient implements ClientModInitializer {
 			}
 		}
 		while (openEmotePickerKey.consumeClick()) {
-			if (client.screen instanceof ChatScreen && isOpenEmotePickerMouseBound()) {
-				continue;
+			// ChatScreenMixin handles picker input while chat is already open. Only the
+			// gameplay-entry path goes through this tick hook, keeping the hot path to one
+			// cheap screen/config check and preventing stale queued clicks from replaying.
+			if (shouldOpenEmotePickerFromGameplay(client)) {
+				openCenteredEmotePicker();
 			}
-			openCenteredEmotePicker();
 		}
 		pollCommandKeybinds(client);
 		if (pendingUpdateNotification && client.player != null) {

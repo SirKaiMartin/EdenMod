@@ -143,6 +143,9 @@ public abstract class ChatScreenMixin {
 	@Unique
 	private int edenmod$sliderPreviewRows = -1;
 
+	@Unique
+	private boolean edenmod$suppressPickerKeyChars;
+
 	@Inject(method = "init", at = @At("TAIL"))
 	private void edenmod$addEmoteFormatter(CallbackInfo ci) {
 		input.addFormatter((text, cursor) -> {
@@ -152,6 +155,8 @@ public abstract class ChatScreenMixin {
 			FormattedCharSequence formatted = ChatEmoteFormatter.format(text);
 			return formatted;
 		});
+		// Shared chat/picker bindings open the screen before this mixin sees the original
+		// key press, so init needs to revive the queued picker request for that case.
 		if (EdenModClient.instance().shouldOpenEmotePickerOnChatOpen()) {
 			EdenModClient.instance().requestCenteredEmotePicker();
 		}
@@ -162,6 +167,14 @@ public abstract class ChatScreenMixin {
 	private void edenmod$handleChatOverlayKeys(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
 		if (!edenmod$isChatEmoteUiVisible() && !edenmod$isChatEmoteAutocompleteEnabled()) {
 			edenmod$resetOverlayState();
+			return;
+		}
+		if (edenmod$isChatEmoteUiVisible() && !edenmod$pickerOpen && EdenModClient.instance().matchesOpenEmotePickerKey(event)) {
+			double[] mouse = edenmod$currentMousePosition();
+			edenmod$openPickerForMode(mouse[0], mouse[1]);
+			edenmod$suppressPickerKeyChars = true;
+			input.setEditable(false);
+			cir.setReturnValue(true);
 			return;
 		}
 		if (edenmod$isChatEmoteUiVisible() && edenmod$pickerOpen && event.key() == GLFW.GLFW_KEY_ESCAPE) {
@@ -261,6 +274,10 @@ public abstract class ChatScreenMixin {
 
 	@Inject(method = "render", at = @At("TAIL"))
 	private void edenmod$renderChatOverlays(GuiGraphics graphics, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+		if (edenmod$suppressPickerKeyChars) {
+			input.setEditable(true);
+			edenmod$suppressPickerKeyChars = false;
+		}
 		// Hovering an attack-timer head shows that player's IGN (works regardless of the
 		// emote-tool settings, like the timer click).
 		AttackTimerMenu.renderGoerTooltip(graphics, mouseX, mouseY);
@@ -989,6 +1006,10 @@ public abstract class ChatScreenMixin {
 
 	@Unique
 	private void edenmod$resetOverlayState() {
+		if (edenmod$suppressPickerKeyChars) {
+			input.setEditable(true);
+			edenmod$suppressPickerKeyChars = false;
+		}
 		edenmod$pickerOpen = false;
 		edenmod$pickerSettingsOpen = false;
 		edenmod$draggingSlider = null;
