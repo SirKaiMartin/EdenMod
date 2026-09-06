@@ -3,6 +3,7 @@ package tel.eden.mod.mixin;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Style;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,8 +19,14 @@ public class GuiGraphicsMixin {
 		if (style != null && style.getHoverEvent() instanceof net.minecraft.network.chat.HoverEvent.ShowText st) {
 			String hoverStr = st.value().getString();
 			int idx = hoverStr.indexOf(ImagePreviewManager.HOVER_MARKER);
-			if (idx != -1) {
-				String url = hoverStr.substring(idx + ImagePreviewManager.HOVER_MARKER.length());
+			if (idx != -1 && style.getClickEvent() instanceof ClickEvent.OpenUrl openUrl) {
+				// Other chat mods may append click hints to the visible hover text. Read
+				// the canonical target from the click event instead of treating everything
+				// after HOVER_MARKER as part of the URL.
+				String url = openUrl.uri().toString();
+				if (!ImagePreviewManager.isPreviewable(url)) {
+					return;
+				}
 				GuiGraphics guiGraphics = (GuiGraphics) (Object) this;
 				Minecraft mc = Minecraft.getInstance();
 				int screenWidth = mc.getWindow().getGuiScaledWidth();

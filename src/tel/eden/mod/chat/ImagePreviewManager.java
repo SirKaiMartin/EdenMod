@@ -148,10 +148,17 @@ public class ImagePreviewManager {
 	}
 
 	public static void renderPreview(GuiGraphics guiGraphics, String url, int x, int y) {
-		PreviewState state = states.computeIfAbsent(url, k -> {
-			downloadImage(url);
-			return PreviewState.DOWNLOADING;
-		});
+		PreviewState state = states.get(url);
+		if (state == null) {
+			PreviewState initial = isPreviewable(url) ? PreviewState.DOWNLOADING : PreviewState.ERROR;
+			PreviewState previous = states.putIfAbsent(url, initial);
+			state = previous != null ? previous : initial;
+			if (previous == null && initial == PreviewState.DOWNLOADING) {
+				downloadImage(url);
+				// downloadImage may fail synchronously during its defensive validation.
+				state = states.getOrDefault(url, PreviewState.DOWNLOADING);
+			}
+		}
 
 		if (state == PreviewState.DOWNLOADING && pendingImages.containsKey(url)) {
 			Frames frames = pendingImages.remove(url);
