@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Auto-installed by build.gradle on every ./gradlew invocation — do not run
+# `git config core.hooksPath` manually, it isn't used. Edit .githooks/pre-commit
+# instead; this file (and any local edits to it) get overwritten on the next
+# gradle run.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+staged_java=$(git diff --cached --name-only --diff-filter=ACM -- '*.java')
+if [ -z "$staged_java" ]; then
+    exit 0
+fi
+
+./gradlew spotlessApply -q
+
+while IFS= read -r f; do
+    [ -f "$f" ] && git add "$f"
+done <<< "$staged_java"

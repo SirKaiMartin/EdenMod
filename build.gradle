@@ -7,6 +7,20 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+// Self-installing pre-commit hook: keeps .git/hooks/pre-commit in sync with
+// .githooks/pre-commit on every gradle invocation, so spotlessApply runs at
+// commit time without anyone needing to run a manual install step. Runs during
+// the configuration phase, so it fires for any task (build, run, spotlessApply, …).
+def hookSource = file('.githooks/pre-commit')
+def gitHooksDir = file('.git/hooks')
+if (hookSource.exists() && gitHooksDir.exists()) {
+    def hookTarget = new File(gitHooksDir, 'pre-commit')
+    if (!hookTarget.exists() || hookTarget.text != hookSource.text) {
+        hookTarget.text = hookSource.text
+        hookTarget.setExecutable(true)
+    }
+}
+
 base {
     archivesName = project.archives_base_name
 }
@@ -163,6 +177,11 @@ spotless {
         eclipse().configFile('eclipse-formatter.xml')
     }
 }
+
+// Belt-and-suspenders alongside the commit-time hook: format on every compile
+// too, so `./gradlew run`/`build`/`test` leave the working tree formatted even
+// if someone bypasses the git hook (e.g. `git commit --no-verify`).
+compileJava.dependsOn spotlessApply
 
 // ── Fulcio cert management ────────────────────────────────────────────────────
 //
