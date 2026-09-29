@@ -21,7 +21,11 @@
     "GuiGraphicsMixin",
     "ItemDecorationMixin",
     "ItemRenderMixin",
-    "TitleScreenMixin"
+    "TitleScreenMixin",
+    "ThickOutlineEntityExtractionMixin",
+    "ThickOutlineFrameGraphMixin",
+    "ThickOutlinePostChainAccessorMixin",
+    "ThickOutlinePostPassAccessorMixin"
   ],
   "injectors": {
     "defaultRequire": 1

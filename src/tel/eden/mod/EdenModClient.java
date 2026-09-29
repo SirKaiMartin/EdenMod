@@ -63,6 +63,8 @@ import tel.eden.mod.war.TerritoryOutlineRenderer;
 import tel.eden.mod.war.WarDPS;
 import tel.eden.mod.war.WarHud;
 import tel.eden.mod.war.WarTracker;
+import tel.eden.mod.util.OutlineManager;
+import tel.eden.mod.util.ThickOutlineRenderer;
 import tel.eden.mod.util.WynntilsChatBridge;
 import com.mojang.authlib.minecraft.MinecraftSessionService;
 import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
@@ -671,6 +673,23 @@ public final class EdenModClient implements ClientModInitializer {
 			}))).then(ClientCommandManager.literal("congratulate").then(ClientCommandManager.argument("name", StringArgumentType.word()).executes(ctx -> {
 				congratulate(ctx.getSource(), StringArgumentType.getString(ctx, "name"));
 				return 1;
+			}))).then(ClientCommandManager.literal("outline").executes(ctx -> addTestOutline(ctx.getSource(), 0xFFFF5555, 5)).then(ClientCommandManager.argument("color", StringArgumentType.word()).then(ClientCommandManager.argument("thickness", IntegerArgumentType.integer(1, OutlineManager.MAX_THICKNESS)).executes(ctx -> {
+				String colorText = StringArgumentType.getString(ctx, "color").replaceFirst("^#", "");
+				if (colorText.length() != 6) {
+					ctx.getSource().sendFeedback(Component.literal("Color must be hex RRGGBB, such as #55AAFF.").withStyle(ChatFormatting.RED));
+					return 0;
+				}
+				try {
+					int rgb = Integer.parseInt(colorText, 16);
+					return addTestOutline(ctx.getSource(), 0xFF000000 | rgb, IntegerArgumentType.getInteger(ctx, "thickness"));
+				} catch (NumberFormatException e) {
+					ctx.getSource().sendFeedback(Component.literal("Color must be hex RRGGBB, such as #55AAFF.").withStyle(ChatFormatting.RED));
+					return 0;
+				}
+			}))).then(ClientCommandManager.literal("clear").executes(ctx -> {
+				ThickOutlineRenderer.manager().clear();
+				ctx.getSource().sendFeedback(Component.literal("Cleared test outlines.").withStyle(ChatFormatting.GREEN));
+				return 1;
 			}))).then(ClientCommandManager.literal("wartest").executes(ctx -> {
 				for (String line : AttackTimerMenu.debugSidebarLines()) {
 					ctx.getSource().sendFeedback(Component.literal("[wartest] " + line).withStyle(ChatFormatting.AQUA));
@@ -1072,6 +1091,20 @@ public final class EdenModClient implements ClientModInitializer {
 		String keyName = openConfigKey.getTranslatedKeyMessage().getString();
 		Style style = Style.EMPTY.withColor(ChatFormatting.AQUA).withUnderlined(true).withClickEvent(new ClickEvent.RunCommand("/eden config")).withHoverEvent(new HoverEvent.ShowText(Component.literal("Open EdenMod settings")));
 		return Component.literal("[" + keyName + "]").setStyle(style);
+	}
+
+	private int addTestOutline(FabricClientCommandSource source, int argb, int thickness) {
+		Minecraft client = Minecraft.getInstance();
+		if (client.crosshairPickEntity == null) {
+			source.sendFeedback(Component.literal("Point at an entity, then run /eden outline <RRGGBB> <1-127>.").withStyle(ChatFormatting.YELLOW));
+			return 0;
+		}
+		if (!ThickOutlineRenderer.manager().add(client.crosshairPickEntity, argb, thickness)) {
+			source.sendFeedback(Component.literal("The outline style limit is " + OutlineManager.MAX_STYLE_SLOTS + " distinct styles. Clear outlines before adding another style.").withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		source.sendFeedback(Component.literal("Added a " + thickness + " px outline to " + client.crosshairPickEntity.getName().getString() + ".").withStyle(ChatFormatting.GREEN));
+		return 1;
 	}
 
 	/** Check GitHub for a newer release once per session; prompt in chat if found. */

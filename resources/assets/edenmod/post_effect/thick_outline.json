@@ -1,0 +1,2804 @@
+{
+  "targets": {
+    "horizontal_64": {},
+    "horizontal_32": {},
+    "horizontal_16": {},
+    "horizontal_8": {},
+    "horizontal_4": {},
+    "horizontal_2": {},
+    "horizontal_1": {},
+    "vertical_64": {},
+    "vertical_32": {},
+    "vertical_16": {},
+    "vertical_8": {},
+    "vertical_4": {},
+    "vertical_2": {},
+    "vertical_1": {},
+    "outline_overlay": {},
+    "clean": {}
+  },
+  "passes": [
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "minecraft:entity_outline"
+        }
+      ],
+      "output": "horizontal_64",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              1,
+              0
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 64
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 1
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "horizontal_64"
+        }
+      ],
+      "output": "horizontal_32",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              1,
+              0
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 32
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "horizontal_32"
+        }
+      ],
+      "output": "horizontal_16",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              1,
+              0
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 16
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "horizontal_16"
+        }
+      ],
+      "output": "horizontal_8",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              1,
+              0
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 8
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "horizontal_8"
+        }
+      ],
+      "output": "horizontal_4",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              1,
+              0
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 4
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "horizontal_4"
+        }
+      ],
+      "output": "horizontal_2",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              1,
+              0
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 2
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "horizontal_2"
+        }
+      ],
+      "output": "horizontal_1",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              1,
+              0
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "horizontal_1"
+        }
+      ],
+      "output": "vertical_64",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 64
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "vertical_64"
+        }
+      ],
+      "output": "vertical_32",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 32
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "vertical_32"
+        }
+      ],
+      "output": "vertical_16",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 16
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "vertical_16"
+        }
+      ],
+      "output": "vertical_8",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 8
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "vertical_8"
+        }
+      ],
+      "output": "vertical_4",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 4
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "vertical_4"
+        }
+      ],
+      "output": "vertical_2",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 2
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_dilate",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "vertical_2"
+        }
+      ],
+      "output": "vertical_1",
+      "uniforms": {
+        "DilationConfig": [
+          {
+            "name": "Direction",
+            "type": "vec2",
+            "value": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "Step",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "Seed",
+            "type": "float",
+            "value": 0
+          }
+        ],
+        "StyleConfig": [
+          {
+            "name": "Style0",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style1",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style2",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style3",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style4",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style5",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style6",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style7",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style8",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style9",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style10",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style11",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style12",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style13",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style14",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "name": "Style15",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_composite",
+      "inputs": [
+        {
+          "sampler_name": "Mask",
+          "target": "vertical_1"
+        },
+        {
+          "sampler_name": "Source",
+          "target": "minecraft:entity_outline"
+        }
+      ],
+      "output": "outline_overlay"
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_combine",
+      "inputs": [
+        {
+          "sampler_name": "Source",
+          "target": "minecraft:main"
+        },
+        {
+          "sampler_name": "Overlay",
+          "target": "outline_overlay"
+        }
+      ],
+      "output": "minecraft:main"
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_clean",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "minecraft:entity_outline"
+        }
+      ],
+      "output": "clean"
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "edenmod:post/thick_outline_copy",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "clean"
+        }
+      ],
+      "output": "minecraft:entity_outline"
+    }
+  ]
+}
