@@ -81,9 +81,10 @@ public record DecodedItem(String name, String tier, int tierColor, String type, 
 	 * One shiny tracker row.
 	 *
 	 * @param name      tracker display name (e.g. {@code "Major World Events Won"})
-	 * @param valueText formatted tracker value
+	 * @param valueText   formatted tracker value
+	 * @param rerollCount the tracker's reroll count, or a negative value if unavailable
 	 */
-	public record ShinyTracker(String name, String valueText) {
+	public record ShinyTracker(String name, String valueText, int rerollCount) {
 	}
 
 	/**

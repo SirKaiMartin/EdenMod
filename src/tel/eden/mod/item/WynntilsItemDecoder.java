@@ -182,7 +182,8 @@ public final class WynntilsItemDecoder {
 			String name = normalizeRenderableText(stringOrBlank(callOrNull(statType, "displayName")));
 			long value = longOr(callOrNull(shinyStat, "value"), 0L);
 			String valueText = formatStatValue(value, statUnitDisplay(statType));
-			return name.isBlank() ? null : new DecodedItem.ShinyTracker(name, valueText);
+			int rerollCount = numberOr(callOrNull(shinyStat, "reroll"), -1);
+			return name.isBlank() ? null : new DecodedItem.ShinyTracker(name, valueText, rerollCount);
 		} catch (RuntimeException ignored) {
 			return null;
 		}

@@ -160,7 +160,7 @@ public final class ItemCardRenderer {
 
 	private static int drawIdentifications(Graphics2D g, DecodedItem item, int y) {
 		if (hasStatsSection(item)) {
-			drawSectionHeader(g, "Stats", item, PAD, y, new Color(item.tierColor()));
+			drawSectionHeader(g, "Stats", item.rerollCount(), PAD, y, new Color(item.tierColor()));
 			y += ROW_H - 4;
 		}
 
@@ -191,7 +191,7 @@ public final class ItemCardRenderer {
 			return y;
 		}
 
-		drawSectionHeader(g, "Tracker", item, PAD, y, SHINY);
+		drawSectionHeader(g, "Tracker", item.shinyTracker().rerollCount(), PAD, y, SHINY);
 		y += ROW_H - 4;
 
 		DecodedItem.ShinyTracker tracker = item.shinyTracker();
@@ -287,11 +287,11 @@ public final class ItemCardRenderer {
 		return height;
 	}
 
-	private static void drawSectionHeader(Graphics2D g, String title, DecodedItem item, int x, int y, Color color) {
+	private static void drawSectionHeader(Graphics2D g, String title, int rerollCount, int x, int y, Color color) {
 		g.setColor(color);
 		g.setFont(SECTION_FONT);
 		g.drawString(title, x, y);
-		if (!hasVisibleRerolls(item)) {
+		if (rerollCount <= 0) {
 			return;
 		}
 
@@ -301,7 +301,7 @@ public final class ItemCardRenderer {
 		Font suffixFont = SECTION_FONT.deriveFont(Font.PLAIN);
 		g.setFont(suffixFont);
 		FontMetrics titleMetrics = g.getFontMetrics(SECTION_FONT);
-		String suffix = " [" + item.rerollCount() + "]";
+		String suffix = " [" + rerollCount + "]";
 		int suffixX = x + titleMetrics.stringWidth(title) + SECTION_SUFFIX_GAP;
 		int suffixY = y + SECTION_SUFFIX_Y_ADJUST;
 		g.drawString(suffix, suffixX, suffixY);
@@ -309,10 +309,6 @@ public final class ItemCardRenderer {
 
 	private static boolean hasStatsSection(DecodedItem item) {
 		return !item.identifications().isEmpty();
-	}
-
-	private static boolean hasVisibleRerolls(DecodedItem item) {
-		return item.hasRerollCount() && item.rerollCount() > 0;
 	}
 
 	private static int measureNameHeight(DecodedItem item) {
